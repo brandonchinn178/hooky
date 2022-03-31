@@ -53,6 +53,7 @@ tests:
       - path-io
       - tasty
       - tasty-hunit
+      - text
       - typed-process
     ghc-options:
       - -threaded

@@ -45,11 +45,11 @@ main = do
   CLIOptions{..} <- execParser cliOptions
   case cliCommand of
     CommandInstall -> do
-      exe <- getExecutablePath >>= parseAbsFile
-      cwd <- getCurrentDir >>= getGitRoot >>= \case
+      gitDir <- getCurrentDir >>= getGitRoot >>= \case
         Just dir -> return dir
         Nothing -> abort "Could not install hooky: not currently in a git repository"
-      doInstall exe cwd
+      exe <- getExecutablePath >>= parseAbsFile
+      doInstall gitDir exe
     CommandRun -> doRun
 
 abort :: String -> IO a
