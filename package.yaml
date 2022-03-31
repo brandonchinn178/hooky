@@ -22,6 +22,7 @@ executables:
     dependencies:
       - base
       - hooky
+      - optparse-applicative
 
 tests:
   hooky-tests:
