@@ -3,6 +3,8 @@
 
 module Hooky.InstallTest (test) where
 
+import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy.Encoding qualified as TextL
 import Path (reldir, relfile, toFilePath, (</>))
 import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
 import System.Process.Typed (readProcess_)
@@ -24,21 +26,31 @@ testDoInstall :: TestTree
 testDoInstall =
   testGroup
     "doInstall"
-    [ testCase "runs the given script on commit" $
-        withTestDir $ \scriptDir ->
-          withGitDir $ \dir -> do
-            -- create a test script
-            let script = scriptDir </> [relfile|test.sh|]
-            writeFile (toFilePath script) . unlines $
-              [ "#!/usr/bin/env sh"
-              , "echo \"Ran with args: $*\""
-              ]
-            setPermissions script . setOwnerExecutable True =<< getPermissions script
-
-            -- install it
-            doInstall (dir </> [reldir|.git|]) script
-
-            -- run a commit
-            (_, stderr) <- readProcess_ $ git dir ["commit", "--allow-empty", "-m", "test commit"]
-            stderr @?= "Ran with args: run\n"
+    [ testCase "runs the given script on commit" $ do
+        args <- doInstallAndGetArgs []
+        args @?= ["run"]
+    , testCase "passes extra args to script" $ do
+        args <- doInstallAndGetArgs ["--foo", "--bar", "a", "b", "c"]
+        args @?= ["run", "--foo", "--bar", "a", "b", "c"]
+    , testCase "quotes extra args" $ do
+        args <- doInstallAndGetArgs ["a b c", "d", "e f"]
+        args @?= ["run", "a b c", "d", "e f"]
     ]
+  where
+    doInstallAndGetArgs extraRunArgs =
+      withTestDir $ \scriptDir ->
+        withGitDir $ \dir -> do
+          -- create a test script
+          let script = scriptDir </> [relfile|test.sh|]
+          writeFile (toFilePath script) . unlines $
+            [ "#!/usr/bin/env sh"
+            , "printf '%s\n' \"$@\""
+            ]
+          setPermissions script . setOwnerExecutable True =<< getPermissions script
+
+          -- install it
+          doInstall (dir </> [reldir|.git|]) script extraRunArgs
+
+          -- run a commit
+          (_, stderr) <- readProcess_ $ git dir ["commit", "--allow-empty", "-m", "test commit"]
+          return $ filter (/= "") $ TextL.splitOn "\n" $ TextL.decodeUtf8 stderr

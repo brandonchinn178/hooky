@@ -39,6 +39,7 @@ executables:
       - optparse-applicative
       - path
       - path-io
+      - text
     ghc-options:
       - -threaded
 

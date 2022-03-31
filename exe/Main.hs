@@ -1,6 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Options.Applicative
 import Path (parseAbsFile)
 import Path.IO (getCurrentDir)
@@ -17,7 +20,11 @@ data CLIOptions = CLIOptions
   { cliCommand :: CLICommand
   }
 
-data CLICommand = CommandInstall | CommandRun
+data CLICommand
+  = CommandInstall
+      { extraRunArgs :: [Text]
+      }
+  | CommandRun
 
 cliOptions :: ParserInfo CLIOptions
 cliOptions =
@@ -35,7 +42,14 @@ cliOptions =
         [ command "install" (info parseInstall $ progDesc "Install hooky as the git pre-commit hook")
         , command "run" (info parseRun $ progDesc "Run hooks manually")
         ]
-    parseInstall = pure CommandInstall
+    parseInstall =
+      CommandInstall
+        <$> parseInstallExtraRunArgs
+    parseInstallExtraRunArgs =
+      fmap (Text.splitOn " ") . strOption . mconcat $
+        [ long "run-args"
+        , help "Extra arguments to pass to the 'hooky run' command in the pre-commit hook"
+        ]
     parseRun = pure CommandRun
 
 {-- Entrypoint --}
@@ -44,12 +58,12 @@ main :: IO ()
 main = do
   CLIOptions{..} <- execParser cliOptions
   case cliCommand of
-    CommandInstall -> do
+    CommandInstall{..} -> do
       gitDir <- getCurrentDir >>= getGitRoot >>= \case
         Just dir -> return dir
         Nothing -> abort "Could not install hooky: not currently in a git repository"
       exe <- getExecutablePath >>= parseAbsFile
-      doInstall gitDir exe
+      doInstall gitDir exe extraRunArgs
     CommandRun -> doRun
 
 abort :: String -> IO a
