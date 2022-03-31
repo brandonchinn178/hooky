@@ -1,0 +1,33 @@
+name: hooky
+version: 0.1.0.0
+description: See README.md
+license: BSD3
+author: Brandon Chinn <brandonchinn178@gmail.com>
+maintainer: Brandon Chinn <brandonchinn178@gmail.com>
+
+extra-source-files:
+  - README.md
+
+github: brandonchinn178/hooky
+
+library:
+  source-dirs: src
+  dependencies:
+    - base
+
+executables:
+  hooky:
+    main: Main.hs
+    source-dirs: exe
+    dependencies:
+      - base
+      - hooky
+
+tests:
+  hooky-tests:
+    main: Main.hs
+    source-dirs: test
+    dependencies:
+      - base
+      - tasty
+      - tasty-hunit
