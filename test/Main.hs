@@ -1,8 +1,9 @@
 import Test.Tasty
-import Test.Tasty.HUnit
+
+import Hooky.GitTest qualified
 
 main :: IO ()
 main =
   defaultMain . testGroup "Hooky" $
-    [ testCase "smoketest" $ return ()
+    [ Hooky.GitTest.test
     ]

@@ -1,6 +1,15 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
 import Options.Applicative
+import Path (parseAbsFile)
+import Path.IO (getCurrentDir)
+import System.Environment (getExecutablePath)
+import System.Exit (exitFailure)
+
+import Hooky.Install (doInstall)
+import Hooky.Git (getGitRoot)
+import Hooky.Run (doRun)
 
 {-- CLI Options --}
 
@@ -35,11 +44,13 @@ main :: IO ()
 main = do
   CLIOptions{..} <- execParser cliOptions
   case cliCommand of
-    CommandInstall -> doInstall
+    CommandInstall -> do
+      exe <- getExecutablePath >>= parseAbsFile
+      cwd <- getCurrentDir >>= getGitRoot >>= \case
+        Just dir -> return dir
+        Nothing -> abort "Could not install hooky: not currently in a git repository"
+      doInstall exe cwd
     CommandRun -> doRun
 
-doInstall :: IO ()
-doInstall = putStrLn "TODO: <install>"
-
-doRun :: IO ()
-doRun = putStrLn "TODO: <run>"
+abort :: String -> IO a
+abort s = putStrLn s >> exitFailure

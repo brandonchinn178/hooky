@@ -10,10 +10,24 @@ extra-source-files:
 
 github: brandonchinn178/hooky
 
+default-extensions:
+  - ImportQualifiedPost
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wnoncanonical-monad-instances
+
 library:
   source-dirs: src
   dependencies:
     - base
+    - path
+    - path-io
+    - text
+    - typed-process
 
 executables:
   hooky:
@@ -23,6 +37,10 @@ executables:
       - base
       - hooky
       - optparse-applicative
+      - path
+      - path-io
+    ghc-options:
+      - -threaded
 
 tests:
   hooky-tests:
@@ -30,5 +48,11 @@ tests:
     source-dirs: test
     dependencies:
       - base
+      - hooky
+      - path
+      - path-io
       - tasty
       - tasty-hunit
+      - typed-process
+    ghc-options:
+      - -threaded
