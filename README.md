@@ -1,10 +1,11 @@
 # Hooky
 
-Fully customizable git hooks manager.
+Minimal git hooks manager.
 
 Features:
-* Configure commands to run in git's pre-commit hook
-    * Configure filter for files to run a hook for
+* Installs as a compiled executable; no need to have Python/Node/whatever installed to bootstrap.
+* Configure commands to run in git's pre-commit hook via a YAML configuration file
+    * Allow commands to define the files to run the hook for
 * Only runs on staged files
     * Supports partially staged files
 * Allow pulling command definitions from third-party GitHub repos
@@ -25,6 +26,8 @@ TODO
 
 However, the maintainer has expressed in multiple issues ([ref 1](https://github.com/pre-commit/pre-commit/issues/1453#issuecomment-967743197), [ref2](https://github.com/pre-commit/pre-commit/issues/2316#issuecomment-1083643390)) that its primary purpose is to be a tool/environment manager, not a git hooks manager. So if you just need a tool that sets up git hooks properly and don't care about pre-commit setting up isolated environments, you might find that pre-commit doesn't work for your use-case exactly, and there's no upstream desire to make it work.
 
+Hooky's primary philosophy is to do one thing well, running git hooks, which means Hooky will probably be more accepting of improvements and features related to configuring and running git hooks.
+
 ### husky
 
-TODO
+TODO: https://typicode.github.io/husky/#/
