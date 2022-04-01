@@ -3,17 +3,14 @@
 
 module Hooky.InstallTest (test) where
 
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.Encoding qualified as TextL
-import Path (relfile, toFilePath, (</>))
-import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
-import System.Process.Typed (readProcess_)
+import Data.Text qualified as Text
+import Path (relfile, (</>))
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import Hooky.Install (doInstall)
-import Hooky.TestUtils (withGitRepo, withTestDir)
-import Hooky.Utils.Git (git)
+import Hooky.TestUtils (getPreCommitHookOutput, withGitRepo, withTestDir)
+import Hooky.Utils.Path (writeScript)
 
 test :: TestTree
 test =
@@ -26,31 +23,33 @@ testDoInstall :: TestTree
 testDoInstall =
   testGroup
     "doInstall"
-    [ testCase "runs the given script on commit" $ do
-        args <- doInstallAndGetArgs []
-        args @?= ["run"]
-    , testCase "passes extra args to script" $ do
-        args <- doInstallAndGetArgs ["--foo", "--bar", "a", "b", "c"]
-        args @?= ["run", "--foo", "--bar", "a", "b", "c"]
-    , testCase "quotes extra args" $ do
-        args <- doInstallAndGetArgs ["a b c", "d", "e f"]
-        args @?= ["run", "a b c", "d", "e f"]
+    [ testCase "runs the given script on commit" $
+        withGitRepo $ \repo ->
+          withTestScript $ \script getRunArgs -> do
+            doInstall repo script []
+            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args @?= ["run"]
+    , testCase "passes extra args to script" $
+        withGitRepo $ \repo ->
+          withTestScript $ \script getRunArgs -> do
+            doInstall repo script ["--foo", "--bar", "a", "b", "c"]
+            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args @?= ["run", "--foo", "--bar", "a", "b", "c"]
+    , testCase "quotes extra args" $
+        withGitRepo $ \repo ->
+          withTestScript $ \script getRunArgs -> do
+            doInstall repo script ["a b c", "d", "e f"]
+            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args @?= ["run", "a b c", "d", "e f"]
     ]
   where
-    doInstallAndGetArgs extraRunArgs =
-      withTestDir $ \scriptDir ->
-        withGitRepo $ \repo -> do
-          -- create a test script
-          let script = scriptDir </> [relfile|test.sh|]
-          writeFile (toFilePath script) . unlines $
-            [ "#!/usr/bin/env sh"
-            , "printf '%s\n' \"$@\""
-            ]
-          setPermissions script . setOwnerExecutable True =<< getPermissions script
+    withTestScript f =
+      withTestDir $ \scriptDir -> do
+        let script = scriptDir </> [relfile|test.sh|]
+        writeScript script . Text.unlines $
+          [ "#!/usr/bin/env sh"
+          , "printf '%s\n' \"$@\""
+          ]
+        let getRunArgs = filter (/= "") . Text.splitOn "\n"
+        f script getRunArgs
 
-          -- install it
-          doInstall repo script extraRunArgs
-
-          -- run a commit
-          (_, stderr) <- readProcess_ $ git repo ["commit", "--allow-empty", "-m", "test commit"]
-          return $ filter (/= "") $ TextL.splitOn "\n" $ TextL.decodeUtf8 stderr
