@@ -46,9 +46,10 @@ cliOptions =
       CommandInstall
         <$> parseInstallExtraRunArgs
     parseInstallExtraRunArgs =
-      fmap (Text.splitOn " ") . strOption . mconcat $
+      option (Text.splitOn " " <$> str) . mconcat $
         [ long "run-args"
         , help "Extra arguments to pass to the 'hooky run' command in the pre-commit hook"
+        , value []
         ]
     parseRun = pure CommandRun
 
