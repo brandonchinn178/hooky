@@ -4,12 +4,14 @@
 module Hooky.InstallTest (test) where
 
 import Data.Text qualified as Text
-import Path (relfile, (</>))
+import Path (relfile, toFilePath, (</>))
+import Path.IO (doesFileExist)
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import Hooky.Install (doInstall)
 import Hooky.TestUtils (getPreCommitHookOutput, withGitRepo, withTestDir)
+import Hooky.Utils.Git (fromGitRepo, git_)
 import Hooky.Utils.Path (writeScript)
 
 test :: TestTree
@@ -41,6 +43,22 @@ testDoInstall =
             doInstall repo script ["a b c", "d", "e f"]
             args <- getRunArgs <$> getPreCommitHookOutput repo
             args @?= ["run", "a b c", "d", "e f"]
+    , testCase "respects core.hooksPath" $ do
+        withTestDir $ \hooksDir ->
+          withGitRepo $ \repo ->
+            withTestScript $ \script getRunArgs -> do
+              git_ repo ["config", "core.hooksPath", toFilePath hooksDir]
+              doInstall repo script []
+
+              -- puts it in right place
+              hookInGitDirExists <- doesFileExist $ fromGitRepo repo </> [relfile|.git/hooks/pre-commit|]
+              hookInGitDirExists @?= False
+              hookInHooksDirExists <- doesFileExist $ hooksDir </> [relfile|pre-commit|]
+              hookInHooksDirExists @?= True
+
+              -- verify it runs correctly
+              args <- getRunArgs <$> getPreCommitHookOutput repo
+              args @?= ["run"]
     ]
   where
     withTestScript f =
