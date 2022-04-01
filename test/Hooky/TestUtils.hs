@@ -1,19 +1,20 @@
 module Hooky.TestUtils (
   withTestDir,
-  withGitDir,
+  withGitRepo,
 ) where
 
 import Path (Abs, Dir, Path)
 import Path.IO (withSystemTempDir)
 
-import Hooky.Git (git_)
+import Hooky.Git (GitRepo, unsafeMakeGitRepo, git_)
 
 withTestDir :: (Path Abs Dir -> IO a) -> IO a
 withTestDir = withSystemTempDir "hooky-test"
 
-withGitDir :: (Path Abs Dir -> IO a) -> IO a
-withGitDir f =
+withGitRepo :: (GitRepo -> IO a) -> IO a
+withGitRepo f =
   withTestDir $ \dir -> do
-    git_ dir ["init"]
-    git_ dir ["commit", "--allow-empty", "-m", "Initial commit"]
-    f dir
+    let repo = unsafeMakeGitRepo dir
+    git_ repo ["init"]
+    git_ repo ["commit", "--allow-empty", "-m", "Initial commit"]
+    f repo

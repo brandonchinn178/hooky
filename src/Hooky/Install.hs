@@ -7,23 +7,25 @@ module Hooky.Install (
 
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Path (Abs, Dir, File, Path, relfile, toFilePath, (</>))
+import Path (Abs, File, Path, relfile, toFilePath)
 import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
 
+import Hooky.Git (GitRepo, getGitPath)
+
 doInstall ::
-  -- | The path to the root of the git repository
-  Path Abs Dir ->
+  -- | The path to the git repository
+  GitRepo ->
   -- | The path to the 'hooky' executable to install
   Path Abs File ->
   -- | Extra arguments to pass to the 'hooky run' command
   [Text] ->
   IO ()
-doInstall gitDir hookyExe extraRunArgs = do
+doInstall repo hookyExe extraRunArgs = do
+  preCommitPath <- getGitPath repo [relfile|hooks/pre-commit|]
   writeFile (toFilePath preCommitPath) . unlines $
     [ "#!/usr/bin/env sh"
     , "exec " <> toFilePath hookyExe <> " run " <> Text.unpack args
     ]
   setPermissions preCommitPath . setOwnerExecutable True =<< getPermissions preCommitPath
   where
-    preCommitPath = gitDir </> [relfile|hooks/pre-commit|]
     args = Text.unwords $ map (\s -> "'" <> s <> "'") extraRunArgs

@@ -24,6 +24,7 @@ library:
   source-dirs: src
   dependencies:
     - base
+    - bytestring
     - path
     - path-io
     - text

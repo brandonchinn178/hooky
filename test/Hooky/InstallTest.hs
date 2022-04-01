@@ -5,7 +5,7 @@ module Hooky.InstallTest (test) where
 
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.Encoding qualified as TextL
-import Path (reldir, relfile, toFilePath, (</>))
+import Path (relfile, toFilePath, (</>))
 import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
 import System.Process.Typed (readProcess_)
 import Test.Tasty
@@ -13,7 +13,7 @@ import Test.Tasty.HUnit
 
 import Hooky.Git (git)
 import Hooky.Install (doInstall)
-import Hooky.TestUtils (withGitDir, withTestDir)
+import Hooky.TestUtils (withGitRepo, withTestDir)
 
 test :: TestTree
 test =
@@ -39,7 +39,7 @@ testDoInstall =
   where
     doInstallAndGetArgs extraRunArgs =
       withTestDir $ \scriptDir ->
-        withGitDir $ \dir -> do
+        withGitRepo $ \repo -> do
           -- create a test script
           let script = scriptDir </> [relfile|test.sh|]
           writeFile (toFilePath script) . unlines $
@@ -49,8 +49,8 @@ testDoInstall =
           setPermissions script . setOwnerExecutable True =<< getPermissions script
 
           -- install it
-          doInstall (dir </> [reldir|.git|]) script extraRunArgs
+          doInstall repo script extraRunArgs
 
           -- run a commit
-          (_, stderr) <- readProcess_ $ git dir ["commit", "--allow-empty", "-m", "test commit"]
+          (_, stderr) <- readProcess_ $ git repo ["commit", "--allow-empty", "-m", "test commit"]
           return $ filter (/= "") $ TextL.splitOn "\n" $ TextL.decodeUtf8 stderr

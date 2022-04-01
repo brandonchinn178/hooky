@@ -11,7 +11,7 @@ import System.Environment (getExecutablePath)
 import System.Exit (exitFailure)
 
 import Hooky.Install (doInstall)
-import Hooky.Git (getGitRoot)
+import Hooky.Git (getGitRepo)
 import Hooky.Run (doRun)
 
 {-- CLI Options --}
@@ -59,11 +59,11 @@ main = do
   CLIOptions{..} <- execParser cliOptions
   case cliCommand of
     CommandInstall{..} -> do
-      gitDir <- getCurrentDir >>= getGitRoot >>= \case
+      repo <- getCurrentDir >>= getGitRepo >>= \case
         Just dir -> return dir
         Nothing -> abort "Could not install hooky: not currently in a git repository"
       exe <- getExecutablePath >>= parseAbsFile
-      doInstall gitDir exe extraRunArgs
+      doInstall repo exe extraRunArgs
     CommandRun -> doRun
 
 abort :: String -> IO a
