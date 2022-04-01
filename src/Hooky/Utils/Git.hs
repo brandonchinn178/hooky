@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Hooky.Git (
+module Hooky.Utils.Git (
   -- * GitRepo
   GitRepo (..),
   fromGitRepo,

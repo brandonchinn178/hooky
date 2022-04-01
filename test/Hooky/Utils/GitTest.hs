@@ -1,13 +1,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module Hooky.GitTest (test) where
+module Hooky.Utils.GitTest (test) where
 
 import Path (reldir, relfile, toFilePath, (</>))
 import Path.IO (ensureDir)
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Hooky.Git (fromGitRepo, getGitPath, getGitRepo, git_, unsafeMakeGitRepo)
+import Hooky.Utils.Git (fromGitRepo, getGitPath, getGitRepo, git_, unsafeMakeGitRepo)
 import Hooky.TestUtils (withGitRepo, withTestDir)
 
 test :: TestTree

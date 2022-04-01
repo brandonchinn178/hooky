@@ -11,8 +11,8 @@ import System.Environment (getExecutablePath)
 import System.Exit (exitFailure)
 
 import Hooky.Install (doInstall)
-import Hooky.Git (getGitRepo)
 import Hooky.Run (doRun)
+import Hooky.Utils.Git (getGitRepo)
 
 {-- CLI Options --}
 

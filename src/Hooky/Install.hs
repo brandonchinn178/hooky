@@ -10,7 +10,7 @@ import Data.Text qualified as Text
 import Path (Abs, File, Path, relfile, toFilePath)
 import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
 
-import Hooky.Git (GitRepo, getGitPath)
+import Hooky.Utils.Git (GitRepo, getGitPath)
 
 doInstall ::
   -- | The path to the git repository

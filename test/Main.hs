@@ -1,11 +1,11 @@
 import Test.Tasty
 
-import Hooky.GitTest qualified
 import Hooky.InstallTest qualified
+import Hooky.Utils.GitTest qualified
 
 main :: IO ()
 main =
   defaultMain . testGroup "Hooky" $
-    [ Hooky.GitTest.test
+    [ Hooky.Utils.GitTest.test
     , Hooky.InstallTest.test
     ]

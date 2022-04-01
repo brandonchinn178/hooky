@@ -6,7 +6,7 @@ module Hooky.TestUtils (
 import Path (Abs, Dir, Path)
 import Path.IO (withSystemTempDir)
 
-import Hooky.Git (GitRepo, unsafeMakeGitRepo, git_)
+import Hooky.Utils.Git (GitRepo, unsafeMakeGitRepo, git_)
 
 withTestDir :: (Path Abs Dir -> IO a) -> IO a
 withTestDir = withSystemTempDir "hooky-test"

@@ -11,9 +11,9 @@ import System.Process.Typed (readProcess_)
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Hooky.Git (git)
 import Hooky.Install (doInstall)
 import Hooky.TestUtils (withGitRepo, withTestDir)
+import Hooky.Utils.Git (git)
 
 test :: TestTree
 test =
