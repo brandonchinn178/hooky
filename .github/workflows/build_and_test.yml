@@ -1,0 +1,28 @@
+name: Build and Test
+on: push
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.stack
+          key: ${{ runner.os }}-stack-cache-${{ hashFiles('stack.yaml.lock', 'package.yaml') }}
+
+      - name: Set up git for integration tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+
+      - name: Build + test
+        run: stack build --test --coverage
+
+      # upload coverage data
+      - name: Generate coverage data
+        run: stack install hpc-lcov && hpc-lcov
+      - uses: codecov/codecov-action@v2
+        with:
+          files: lcov.info
