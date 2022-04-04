@@ -3,7 +3,18 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    size: 14294
+    url: https://github.com/brandonchinn178/toml-parser/archive/22a23cfa78a5.tar.gz
+    name: toml-parser
+    version: 0.1.0.0
+    sha256: 7e0ef427e914d0683c9d187d5c481ce6a60a26d55f1210343ae3deb296ee8ba0
+    pantry-tree:
+      size: 1177
+      sha256: cdd9c6b1be24443014bc957be0e53c1da3ba3f4c81be1750701b1baea4657163
+  original:
+    url: https://github.com/brandonchinn178/toml-parser/archive/22a23cfa78a5.tar.gz
 snapshots:
 - completed:
     size: 617355

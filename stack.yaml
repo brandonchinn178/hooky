@@ -1,4 +1,8 @@
 resolver: lts-19.1
 
+extra-deps:
+  - github: brandonchinn178/toml-parser
+    commit: 22a23cfa78a5
+
 ghc-options:
   '$locals': -Werror

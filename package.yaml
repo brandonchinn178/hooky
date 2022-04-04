@@ -25,9 +25,12 @@ library:
   dependencies:
     - base
     - bytestring
+    - containers
+    - Glob
     - path
     - path-io
     - text
+    - toml-parser
     - typed-process
 
 executables:
