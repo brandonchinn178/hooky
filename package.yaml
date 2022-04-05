@@ -53,6 +53,8 @@ tests:
     source-dirs: test
     dependencies:
       - base
+      - containers
+      - Glob
       - hooky
       - path
       - path-io
