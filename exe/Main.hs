@@ -2,14 +2,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
+import Control.Monad ((>=>))
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import Options.Applicative
-import Path (parseAbsFile)
-import Path.IO (getCurrentDir)
+import Path (Abs, File, Path, parseAbsFile, toFilePath)
+import Path.IO (getCurrentDir, resolveFile)
 import System.Environment (getExecutablePath)
 import System.Exit (exitFailure)
 
+import Hooky.Config (Config, parseConfig)
 import Hooky.Install (doInstall)
 import Hooky.Run (doRun)
 import Hooky.Utils.Git (getGitRepo)
@@ -18,6 +21,7 @@ import Hooky.Utils.Git (getGitRepo)
 
 data CLIOptions = CLIOptions
   { cliCommand :: CLICommand
+  , cliConfigFilePath :: FilePath
   }
 
 data CLICommand
@@ -36,6 +40,16 @@ cliOptions =
     parseOptions =
       CLIOptions
         <$> parseCommand
+        <*> parseConfigFilePath
+
+    parseConfigFilePath =
+      strOption . mconcat $
+        [ long "config"
+        , short 'c'
+        , help "Path to config file"
+        , value "hooky-config.toml"
+        , showDefault
+        ]
 
     parseCommand =
       hsubparser . mconcat $
@@ -58,14 +72,24 @@ cliOptions =
 main :: IO ()
 main = do
   CLIOptions{..} <- execParser cliOptions
+  cwd <- getCurrentDir
+  configFile <- resolveFile cwd cliConfigFilePath
+
   case cliCommand of
     CommandInstall{..} -> do
-      repo <- getCurrentDir >>= getGitRepo >>= \case
+      repo <- getGitRepo cwd >>= \case
         Just dir -> return dir
         Nothing -> abort "Could not install hooky: not currently in a git repository"
       exe <- getExecutablePath >>= parseAbsFile
-      doInstall repo exe extraRunArgs
-    CommandRun -> doRun
+      let args = ["--config", Text.pack (toFilePath configFile)] <> extraRunArgs
+      doInstall repo exe args
+    CommandRun -> readConfig configFile >>= doRun
+
+readConfig :: Path Abs File -> IO Config
+readConfig = readConfigFile >=> decodeConfig
+  where
+    readConfigFile = Text.readFile . toFilePath
+    decodeConfig = either (abort . Text.unpack) return . parseConfig
 
 abort :: String -> IO a
 abort s = putStrLn s >> exitFailure

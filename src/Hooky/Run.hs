@@ -2,5 +2,9 @@ module Hooky.Run (
   doRun,
 ) where
 
-doRun :: IO ()
-doRun = return ()
+import Hooky.Config (Config)
+
+doRun :: Config -> IO ()
+doRun config = do
+  print config
+  return ()
