@@ -7,7 +7,15 @@ import Path.IO (ensureDir)
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Hooky.Utils.Git (fromGitRepo, getGitPath, getGitRepo, git_, unsafeMakeGitRepo)
+import Hooky.Utils.Git (
+  fromGitRepo,
+  getGitPath,
+  getGitRepo,
+  getStagedFiles,
+  git_,
+  inRepo,
+  unsafeMakeGitRepo,
+ )
 import Hooky.TestUtils (withGitRepo, withTestDir)
 
 test :: TestTree
@@ -16,6 +24,7 @@ test =
     "Hooky.Git"
     [ testGetGitRepo
     , testGetGitPath
+    , testGetStagedFiles
     ]
 
 testGetGitRepo :: TestTree
@@ -70,3 +79,40 @@ testGetGitPath =
           let worktreeDir = dir </> [reldir|test|]
           git_ repo ["worktree", "add", "-b", "test-branch", toFilePath worktreeDir]
           f repo (unsafeMakeGitRepo worktreeDir)
+
+testGetStagedFiles :: TestTree
+testGetStagedFiles =
+  testGroup
+    "getStagedFiles"
+    [ testCase "gets staged files" $
+        withGitRepo $ \repo -> do
+          let file1 = [relfile|file1.txt|]
+              file2 = [relfile|file2.txt|]
+              file3 = [relfile|file3.txt|]
+          create repo [file1, file2, file3]
+          stage repo [file1, file2]
+          files <- getStagedFiles repo
+          files @?= [file1, file2]
+    , testCase "handles files with whitespace" $
+        withGitRepo $ \repo -> do
+          let file = [relfile|a b c.txt|]
+          create repo [file]
+          stage repo [file]
+          files <- getStagedFiles repo
+          files @?= [file]
+    , testCase "ignores deleted files" $
+        withGitRepo $ \repo -> do
+          let file1 = [relfile|file1.txt|]
+              file2 = [relfile|file2.txt|]
+          create repo [file1]
+          stage repo [file1]
+          git_ repo ["commit", "-m", "initial commit"]
+          git_ repo ["rm", toFilePath file1]
+          create repo [file2]
+          stage repo [file2]
+          files <- getStagedFiles repo
+          files @?= [file2]
+    ]
+  where
+    create repo = mapM_ (flip writeFile "" . toFilePath . inRepo repo)
+    stage repo files = git_ repo $ ["add"] <> map toFilePath files
