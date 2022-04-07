@@ -1,0 +1,23 @@
+# TODO: uncomment
+# [source.hooky-checks]
+# github = "brandonchinn178/hooky-checks"
+# rev = "v1.0.0"
+
+# [[check]]
+# name = "end-of-file-fixer"
+# source = "hooky-checks"
+
+[[check]]
+name = "trailing-whitespace"
+command = "sed -i'' 's/[[:space:]]*$//'"
+
+# TODO: add setup hook
+[[check]]
+name = "fourmolu"
+# equivalent to:
+#   command = ["stack", "exec", "--", "fourmolu", "-i"]
+#   command = ["bash", "-c", 'stack exec -- fourmolu -i "$@"']
+command = "stack exec -- fourmolu -i"
+# equivalent to:
+#   files = ["**/*.hs"]
+files = "**/*.hs"

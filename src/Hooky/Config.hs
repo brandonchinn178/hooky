@@ -10,16 +10,19 @@ module Hooky.Config (
   Config (..),
   Check (..),
   Source (..),
+  CommandDefinition (..),
   SourceReference (..),
   parseConfig,
 ) where
 
 import Control.Applicative (Alternative (..), (<|>))
-import Control.Monad (when, (<=<))
+import Control.Monad ((<=<))
 import Data.Bifunctor (first)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.FilePath.Glob (Pattern)
@@ -36,8 +39,7 @@ data Config = Config
 -- TODO: add 'setup' field
 data Check = Check
   { checkName :: Text
-  , checkSource :: Maybe SourceReference
-  , checkCommand :: [Text]
+  , checkCommand :: CommandDefinition
   , checkFiles :: [Pattern]
   }
   deriving (Show, Eq)
@@ -50,6 +52,11 @@ data Source
   | TarSource
       { tarUrl :: Text
       }
+  deriving (Show, Eq)
+
+data CommandDefinition
+  = ExplicitCommand (NonEmpty Text)
+  | CommandFromSource SourceReference
   deriving (Show, Eq)
 
 data SourceReference = SourceReference
@@ -79,16 +86,20 @@ instance FromTOML Check where
     checkName <- o .: "name"
 
     rawSource <- o .:? "source"
-    checkSource <-
+    source <-
       flip traverse rawSource $ \case
         TOML.String srcName -> pure $ SourceReference srcName checkName
         v@(TOML.Table _) -> fromTOML v
         v -> Left $ "Could not parse SourceReference: " <> Text.pack (show v)
 
-    checkCommand <- o .:? "command" >>= parseCommand
+    command <- o .:? "command" >>= parseCommand
 
-    when (null checkCommand && isNothing checkSource) $
-      Left "'command' or 'source' must be provided"
+    checkCommand <-
+      case (source, NonEmpty.nonEmpty command) of
+        (Nothing, Nothing) -> Left "'command' or 'source' must be provided"
+        (Nothing, Just cmd) -> Right $ ExplicitCommand cmd
+        (Just sourceRef, Nothing) -> Right $ CommandFromSource sourceRef
+        (Just _, Just _) -> Left "Cannot specify both 'command' and 'source'"
 
     checkFiles <- oneOrArrayAt o "files"
 

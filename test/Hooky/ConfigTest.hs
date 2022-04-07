@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hooky.ConfigTest (test) where
@@ -7,12 +8,12 @@ module Hooky.ConfigTest (test) where
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
-import System.FilePath.Glob qualified as Glob
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import Hooky.Config
   ( Check (..)
+  , CommandDefinition (..)
   , Config (..)
   , Source (..)
   , SourceReference (..)
@@ -54,8 +55,7 @@ testParseConfig =
             check
               @?= Check
                 { checkName = "always-success"
-                , checkSource = Nothing
-                , checkCommand = ["true"]
+                , checkCommand = ExplicitCommand ["true"]
                 , checkFiles = []
                 }
         , testCase "parses multiple checks" $ do
@@ -70,21 +70,21 @@ testParseConfig =
                     ]
             map checkName cfgChecks @?= ["test1", "test2"]
         , testCase "parses a check source" $ do
-            let Check{checkSource} =
+            let Check{checkCommand} =
                   getOneCheck . parse $
                     [ "[[check]]"
                     , "name = 'test'"
                     , "source = 'upstream'"
                     ]
-            checkSource @?= Just (SourceReference "upstream" "test")
+            checkCommand @?= CommandFromSource (SourceReference "upstream" "test")
         , testCase "parses a check source with explicit check name" $ do
-            let Check{checkSource} =
+            let Check{checkCommand} =
                   getOneCheck . parse $
                     [ "[[check]]"
                     , "name = 'my-test'"
                     , "source = { name = 'upstream', check = 'test' }"
                     ]
-            checkSource @?= Just (SourceReference "upstream" "test")
+            checkCommand @?= CommandFromSource (SourceReference "upstream" "test")
         , testCase "errors without command nor source" $ do
             let result =
                   parseEither
@@ -101,7 +101,7 @@ testParseConfig =
                     , "name = 'test'"
                     , "command = 'true'"
                     ]
-            checkCommand @?= ["true"]
+            checkCommand @?= ExplicitCommand ["true"]
         , testCase "parses a shell command" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
@@ -109,7 +109,7 @@ testParseConfig =
                     , "name = 'test'"
                     , "command = 'echo hello world > test.txt'"
                     ]
-            checkCommand @?= ["bash", "-c", "echo hello world > test.txt"]
+            checkCommand @?= ExplicitCommand ["bash", "-c", "echo hello world > test.txt"]
         , testCase "parses a command array" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
@@ -117,7 +117,7 @@ testParseConfig =
                     , "name = 'test'"
                     , "command = ['python', 'test.py']"
                     ]
-            checkCommand @?= ["python", "test.py"]
+            checkCommand @?= ExplicitCommand ["python", "test.py"]
         , testCase "parses a single file filter" $ do
             let Check{checkFiles} =
                   getOneCheck . parse $
@@ -126,7 +126,7 @@ testParseConfig =
                     , "command = 'true'"
                     , "files = '*.txt'"
                     ]
-            checkFiles @?= map Glob.compile ["*.txt"]
+            checkFiles @?= ["*.txt"]
         , testCase "parses multiple file filters" $ do
             let Check{checkFiles} =
                   getOneCheck . parse $
@@ -135,7 +135,7 @@ testParseConfig =
                     , "command = 'true'"
                     , "files = ['*.txt', '*.md']"
                     ]
-            checkFiles @?= map Glob.compile ["*.txt", "*.md"]
+            checkFiles @?= ["*.txt", "*.md"]
         ]
 
     getTestSource = \case
@@ -205,13 +205,13 @@ testParseConfig =
                   parse
                     [ "exclude = '*.txt'"
                     ]
-            cfgExclude @?= map Glob.compile ["*.txt"]
+            cfgExclude @?= ["*.txt"]
         , testCase "parses multiple exclude patterns" $ do
             let Config{cfgExclude} =
                   parse
                     [ "exclude = ['*.txt', '*.md']"
                     ]
-            cfgExclude @?= map Glob.compile ["*.txt", "*.md"]
+            cfgExclude @?= ["*.txt", "*.md"]
         ]
 
 {-- Helpers --}

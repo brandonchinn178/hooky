@@ -6,8 +6,8 @@ import Control.Monad ((>=>))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
-import Options.Applicative
-import Path (Abs, File, Path, parseAbsFile, toFilePath)
+import Options.Applicative hiding (action)
+import Path (Abs, Dir, File, Path, parseAbsFile, toFilePath)
 import Path.IO (getCurrentDir, resolveFile)
 import System.Environment (getExecutablePath)
 import System.Exit (exitFailure)
@@ -15,7 +15,7 @@ import System.Exit (exitFailure)
 import Hooky.Config (Config, parseConfig)
 import Hooky.Install (doInstall)
 import Hooky.Run (doRun)
-import Hooky.Utils.Git (getGitRepo)
+import Hooky.Utils.Git (GitRepo, getGitRepo)
 
 {-- CLI Options --}
 
@@ -77,13 +77,20 @@ main = do
 
   case cliCommand of
     CommandInstall{..} -> do
-      repo <- getGitRepo cwd >>= \case
-        Just dir -> return dir
-        Nothing -> abort "Could not install hooky: not currently in a git repository"
+      repo <- getGitRepoOrFail "install" cwd
       exe <- getExecutablePath >>= parseAbsFile
       let args = ["--config", Text.pack (toFilePath configFile)] <> extraRunArgs
       doInstall repo exe args
-    CommandRun -> readConfig configFile >>= doRun
+    CommandRun -> do
+      repo <- getGitRepoOrFail "run" cwd
+      config <- readConfig configFile
+      doRun repo config
+
+getGitRepoOrFail :: String -> Path Abs Dir -> IO GitRepo
+getGitRepoOrFail action cwd =
+  getGitRepo cwd >>= \case
+    Just repo -> return repo
+    Nothing -> abort $ "Could not " <> action <> " hooky: not currently in a git repository"
 
 readConfig :: Path Abs File -> IO Config
 readConfig = readConfigFile >=> decodeConfig
