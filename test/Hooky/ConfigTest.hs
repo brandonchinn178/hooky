@@ -107,9 +107,9 @@ testParseConfig =
                   getOneCheck . parse $
                     [ "[[check]]"
                     , "name = 'test'"
-                    , "command = 'echo hello world > test.txt'"
+                    , "command = 'python3 do_check.py'"
                     ]
-            checkCommand @?= ExplicitCommand ["bash", "-c", "echo hello world > test.txt"]
+            checkCommand @?= ExplicitCommand ["/bin/sh", "-c", "python3 do_check.py \"$@\""]
         , testCase "parses a command array" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $

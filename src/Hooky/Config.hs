@@ -108,7 +108,10 @@ instance FromTOML Check where
       parseCommand = \case
         Nothing -> pure []
         Just (TOML.String s)
-          | ' ' `Text.elem` s -> pure ["bash", "-c", s]
+          | ' ' `Text.elem` s ->
+            -- TODO: allow customizing (explicit "$@" in command should pass files as arguments to sh,
+            -- pass_filenames = false should not pass anything)
+            pure ["/bin/sh", "-c", s <> " \"$@\""]
           | otherwise -> pure [s]
         Just v@(TOML.List _) -> fromTOML v
         v -> Left $ "Could not parse command: " <> Text.pack (show v)

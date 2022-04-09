@@ -9,15 +9,16 @@
 
 [[check]]
 name = "trailing-whitespace"
-command = "sed -i'' 's/[[:space:]]*$//'"
+command = "sed -i '' -e 's/[[:space:]]*$//'"
 
 # TODO: add setup hook
+# TODO: add label
 [[check]]
 name = "fourmolu"
 # equivalent to:
 #   command = ["stack", "exec", "--", "fourmolu", "-i"]
 #   command = ["bash", "-c", 'stack exec -- fourmolu -i "$@"']
-command = "stack exec -- fourmolu -i"
+command = "stack exec -- fourmolu -i -e"
 # equivalent to:
 #   files = ["**/*.hs"]
 files = "**/*.hs"
