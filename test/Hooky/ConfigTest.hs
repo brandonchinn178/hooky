@@ -11,14 +11,14 @@ import Data.Text qualified as Text
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Hooky.Config
-  ( Check (..)
-  , CommandDefinition (..)
-  , Config (..)
-  , Source (..)
-  , SourceReference (..)
-  , parseConfig
-  )
+import Hooky.Config (
+  Check (..),
+  CommandDefinition (..),
+  Config (..),
+  Source (..),
+  SourceReference (..),
+  parseConfig,
+ )
 
 test :: TestTree
 test =

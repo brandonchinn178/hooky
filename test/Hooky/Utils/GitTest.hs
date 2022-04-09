@@ -7,6 +7,7 @@ import Path.IO (ensureDir)
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Hooky.TestUtils (withGitRepo, withTestDir)
 import Hooky.Utils.Git (
   fromGitRepo,
   getGitPath,
@@ -16,7 +17,6 @@ import Hooky.Utils.Git (
   inRepo,
   unsafeMakeGitRepo,
  )
-import Hooky.TestUtils (withGitRepo, withTestDir)
 
 test :: TestTree
 test =

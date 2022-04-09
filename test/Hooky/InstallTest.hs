@@ -70,4 +70,3 @@ testDoInstall =
           ]
         let getRunArgs = filter (/= "") . Text.splitOn "\n"
         f script getRunArgs
-

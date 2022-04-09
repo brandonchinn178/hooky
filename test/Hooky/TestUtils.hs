@@ -8,7 +8,7 @@ import Data.Text (Text)
 import Path (Abs, Dir, Path)
 import Path.IO (withSystemTempDir)
 
-import Hooky.Utils.Git (GitRepo, unsafeMakeGitRepo, git, git_)
+import Hooky.Utils.Git (GitRepo, git, git_, unsafeMakeGitRepo)
 import Hooky.Utils.Process (readProcessText_)
 
 withTestDir :: (Path Abs Dir -> IO a) -> IO a

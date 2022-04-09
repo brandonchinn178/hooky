@@ -12,7 +12,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (mapMaybe)
 import Data.Text (Text)
-import Path (File, Rel, Path, toFilePath)
+import Path (File, Path, Rel, toFilePath)
 import System.FilePath.Glob qualified as Glob
 
 import Hooky.Config (Check (..), CommandDefinition (..), Config (..))

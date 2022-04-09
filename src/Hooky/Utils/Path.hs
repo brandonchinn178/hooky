@@ -7,7 +7,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Path (File, Path, toFilePath)
-import Path.IO (getPermissions, setPermissions, setOwnerExecutable)
+import Path.IO (getPermissions, setOwnerExecutable, setPermissions)
 
 pathToText :: Path b t -> Text
 pathToText = Text.pack . toFilePath
