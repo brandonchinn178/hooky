@@ -16,9 +16,9 @@ command = "sed -i '' -e 's/[[:space:]]*$//'"
 [[check]]
 name = "fourmolu"
 # equivalent to:
-#   command = "stack exec -- fourmolu -i -e"
-#   command = ["/bin/sh", "-c", 'stack exec -- fourmolu -i "$@"']
-command = ["stack", "exec", "--", "fourmolu", "-i", "-e"]
+#   command = ['stack', 'exec', '--', 'fourmolu', '-i', '-e']
+#   command = ['/bin/sh', '-c', 'stack exec -- fourmolu -i "$@"', '/bin/sh']
+command = "stack exec -- fourmolu -i -e"
 # equivalent to:
 #   files = ["**/*.hs"]
 files = "**/*.hs"

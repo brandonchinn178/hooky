@@ -111,7 +111,7 @@ instance FromTOML Check where
           | ' ' `Text.elem` s ->
               -- TODO: allow customizing (explicit "$@" in command should pass files as arguments to sh,
               -- pass_filenames = false should not pass anything)
-              pure ["/bin/sh", "-c", s <> " \"$@\""]
+              pure ["/bin/sh", "-c", s <> " \"$@\"", "/bin/sh"]
           | otherwise -> pure [s]
         Just v@(TOML.List _) -> fromTOML v
         v -> Left $ "Could not parse command: " <> Text.pack (show v)

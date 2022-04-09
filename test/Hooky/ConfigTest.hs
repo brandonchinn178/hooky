@@ -109,7 +109,7 @@ testParseConfig =
                     , "name = 'test'"
                     , "command = 'python3 do_check.py'"
                     ]
-            checkCommand @?= ExplicitCommand ["/bin/sh", "-c", "python3 do_check.py \"$@\""]
+            checkCommand @?= ExplicitCommand ["/bin/sh", "-c", "python3 do_check.py \"$@\"", "/bin/sh"]
         , testCase "parses a command array" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
