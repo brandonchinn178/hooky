@@ -9,10 +9,9 @@ test =
     [ testDoRun
     ]
 
+-- TODO: test commit -a, running various command formats
 testDoRun :: TestTree
 testDoRun =
   testGroup
     "doRun"
-    [ -- TODO: test commit -a
-    ]
-
+    []
