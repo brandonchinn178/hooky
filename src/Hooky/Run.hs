@@ -4,7 +4,7 @@ module Hooky.Run (
   doRun,
 ) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM, unless)
 import Data.ByteString.Lazy qualified as ByteStringL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
@@ -29,20 +29,25 @@ doRun repo config = do
   let ExecutionPlan plan = compilePlan config files
   if null plan
     then putStrLn "No files to check"
-    else forM_ plan $ \ExecutionStep{..} -> do
-      -- TODO: More sophisticated terminal output
-      printf "=====> Running: \"%s\"... " stepName >> hFlush stdout
+    else do
+      successes <-
+        forM plan $ \ExecutionStep{..} -> do
+          -- TODO: More sophisticated terminal output
+          printf "=====> Running: \"%s\"... " stepName >> hFlush stdout
 
-      let ExecutionCommand cmd args = stepCommand
-      (code, output) <-
-        readProcessInterleaved $
-          proc
-            (Text.unpack cmd)
-            (map Text.unpack args <> (map toFilePath . NonEmpty.toList) stepFiles)
+          let ExecutionCommand cmd args = stepCommand
+          (code, output) <-
+            readProcessInterleaved $
+              proc
+                (Text.unpack cmd)
+                (map Text.unpack args <> (map toFilePath . NonEmpty.toList) stepFiles)
 
-      case code of
-        ExitSuccess -> putStrLn "PASSED"
-        ExitFailure _ -> do
-          putStrLn "FAILED"
-          ByteStringL.hPutStr stdout output
-          exitFailure
+          case code of
+            ExitSuccess -> do
+              putStrLn "PASSED"
+              return True
+            ExitFailure _ -> do
+              putStrLn "FAILED"
+              ByteStringL.hPutStr stdout output
+              return False
+      unless (and successes) exitFailure
