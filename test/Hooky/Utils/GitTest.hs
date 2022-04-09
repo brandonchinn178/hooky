@@ -93,6 +93,14 @@ testGetStagedFiles =
           stage repo [file1, file2]
           files <- getStagedFiles repo
           files @?= [file1, file2]
+    , testCase "returns an empty list when no staged files" $
+        withGitRepo $ \repo -> do
+          let file1 = [relfile|file1.txt|]
+              file2 = [relfile|file2.txt|]
+              file3 = [relfile|file3.txt|]
+          create repo [file1, file2, file3]
+          files <- getStagedFiles repo
+          files @?= []
     , testCase "handles files with whitespace" $
         withGitRepo $ \repo -> do
           let file = [relfile|a b c.txt|]

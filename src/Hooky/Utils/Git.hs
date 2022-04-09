@@ -73,7 +73,7 @@ getStagedFiles repo = do
         , "--diff-filter=ACMRTUXB" -- everything except D
         , "-z"
         ]
-  let files = Text.split (== '\NUL') . Text.dropWhileEnd (== '\NUL') $ filesRaw
+  let files = filter (not . Text.null) . Text.split (== '\NUL') . Text.dropWhileEnd (== '\NUL') $ filesRaw
   forM files $ \file ->
     maybe (error $ "git diff unexpectedly returned non-relative path: " <> show file) return $
       parseRelFile (Text.unpack file)
