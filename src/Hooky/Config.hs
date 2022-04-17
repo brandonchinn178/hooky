@@ -16,18 +16,29 @@ module Hooky.Config (
 ) where
 
 import Control.Applicative (Alternative (..), (<|>))
-import Control.Monad ((<=<))
+import Data.Aeson (
+  FromJSON (..),
+  Key,
+  Object,
+  Value (..),
+  withObject,
+  (.!=),
+  (.:),
+  (.:?),
+ )
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Aeson.Types (Parser)
 import Data.Bifunctor (first)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
+import Data.Yaml qualified as Yaml
 import System.FilePath.Glob (Pattern)
 import System.FilePath.Glob qualified as Glob
-import TOML qualified
 
 data Config = Config
   { cfgChecks :: [Check]
@@ -67,131 +78,79 @@ data SourceReference = SourceReference
 
 {-- TOML parsing --}
 
--- TODO: better printing of error
 parseConfig :: Text -> Either Text Config
-parseConfig = fromTOML . TOML.Table <=< first (Text.pack . show) . TOML.parseTOML
+parseConfig = first (Text.pack . Yaml.prettyPrintParseException) . Yaml.decodeEither' . Text.encodeUtf8
 
-instance FromTOML Config where
-  fromTOML = withObject "Config" $ \o ->
-    Config
-      <$> o .:? "check" .!= []
-      <*> o .:? "source" .!= Map.empty
-      <*> oneOrArrayAt o "exclude"
+instance FromJSON Config where
+  parseJSON = \case
+    Object o -> go o
+    Null -> go mempty -- empty config file
+    v -> fail $ "Could not parse config: " <> show v
+    where
+      go o =
+        Config
+          <$> o .:? "checks" .!= []
+          <*> o .:? "sources" .!= Map.empty
+          <*> oneOrArrayAt o "exclude"
 
-instance FromTOML Pattern where
-  fromTOML = fmap (Glob.compile . Text.unpack) . fromTOML
+instance FromJSON Pattern where
+  parseJSON = fmap (Glob.compile . Text.unpack) . parseJSON
 
-instance FromTOML Check where
-  fromTOML = withObject "Check" $ \o -> do
+instance FromJSON Check where
+  parseJSON = withObject "Check" $ \o -> do
     checkName <- o .: "name"
 
     rawSource <- o .:? "source"
     source <-
       flip traverse rawSource $ \case
-        TOML.String srcName -> pure $ SourceReference srcName checkName
-        v@(TOML.Table _) -> fromTOML v
-        v -> Left $ "Could not parse SourceReference: " <> Text.pack (show v)
+        String srcName -> pure $ SourceReference srcName checkName
+        v@(Object _) -> parseJSON v
+        v -> fail $ "Could not parse SourceReference: " <> show v
 
     command <- o .:? "command" >>= parseCommand
-
     checkCommand <-
       case (source, NonEmpty.nonEmpty command) of
-        (Nothing, Nothing) -> Left "'command' or 'source' must be provided"
-        (Nothing, Just cmd) -> Right $ ExplicitCommand cmd
-        (Just sourceRef, Nothing) -> Right $ CommandFromSource sourceRef
-        (Just _, Just _) -> Left "Cannot specify both 'command' and 'source'"
-
+        (Nothing, Nothing) -> fail "'command' or 'source' must be provided"
+        (Nothing, Just cmd) -> pure $ ExplicitCommand cmd
+        (Just sourceRef, Nothing) -> pure $ CommandFromSource sourceRef
+        (Just _, Just _) -> fail "Cannot specify both 'command' and 'source'"
     checkFiles <- oneOrArrayAt o "files"
-
     pure Check{..}
     where
       parseCommand = \case
         Nothing -> pure []
-        Just (TOML.String s)
+        Just (String s)
           | ' ' `Text.elem` s ->
               -- TODO: allow customizing (explicit "$@" in command should pass files as arguments to sh,
               -- pass_filenames = false should not pass anything)
               pure ["/bin/sh", "-c", s <> " \"$@\"", "/bin/sh"]
           | otherwise -> pure [s]
-        Just v@(TOML.List _) -> fromTOML v
-        v -> Left $ "Could not parse command: " <> Text.pack (show v)
+        Just v@(Array _) -> parseJSON v
+        v -> fail $ "Could not parse command: " <> show v
 
-instance FromTOML Source where
-  fromTOML v = flip (withObject "Source") v $ \o ->
+instance FromJSON Source where
+  parseJSON = withObject "Source" $ \o ->
     if
-        | "github" `Map.member` o -> parseGitHubSource v
-        | "git" `Map.member` o -> parseGitSource v
-        | "url" `Map.member` o -> parseTarSource v
-        | otherwise -> Left $ "Invalid source: " <> Text.pack (show o)
+        | Just (String githubRef) <- "github" `KeyMap.lookup` o ->
+            GitSource
+              <$> githubToURL githubRef
+              <*> o .: "rev"
+        | Just (String gitUrl) <- "git" `KeyMap.lookup` o ->
+            GitSource gitUrl <$> o .: "rev"
+        | Just (String tarUrl) <- "url" `KeyMap.lookup` o ->
+            pure $ TarSource tarUrl
+        | otherwise -> fail $ "Invalid source: " <> show o
     where
-      parseGitHubSource = withObject "GitHubSource" $ \o ->
-        GitSource
-          <$> (o .: "github" >>= githubToURL)
-          <*> o .: "rev"
-      parseGitSource = withObject "GitSource" $ \o ->
-        GitSource
-          <$> o .: "git"
-          <*> o .: "rev"
-      parseTarSource = withObject "TarSource" $ \o ->
-        TarSource <$> o .: "url"
-
       githubToURL t =
         case Text.splitOn "/" t of
           [owner, repo] -> pure $ "https://github.com/" <> owner <> "/" <> repo <> ".git"
-          _ -> Left $ "Invalid github repository: " <> t
+          _ -> fail $ "Invalid github repository: " <> Text.unpack t
 
-instance FromTOML SourceReference where
-  fromTOML = withObject "SourceReference" $ \o ->
+instance FromJSON SourceReference where
+  parseJSON = withObject "SourceReference" $ \o ->
     SourceReference
       <$> o .: "name"
       <*> o .: "check"
 
-oneOrArrayAt :: FromTOML a => Map Text TOML.Value -> Text -> Either Text [a]
+oneOrArrayAt :: FromJSON a => Object -> Key -> Parser [a]
 oneOrArrayAt o key = ((: []) <$> o .: key) <|> (o .:? key .!= [])
-
-{-- FromTOML --}
-
--- TODO: move this to toml-parser? provide better API?
-class FromTOML a where
-  fromTOML :: TOML.Value -> Either Text a
-
-instance FromTOML a => FromTOML [a] where
-  fromTOML = \case
-    TOML.List vs -> mapM fromTOML vs
-    v -> Left $ "Expected List, got: " <> Text.pack (show v)
-
-instance FromTOML Text where
-  fromTOML = \case
-    TOML.String t -> Right t
-    v -> Left $ "Expected Text, got: " <> Text.pack (show v)
-
-instance FromTOML a => FromTOML (Map Text a) where
-  fromTOML = \case
-    TOML.Table kvs -> traverse fromTOML $ Map.fromList kvs
-    v -> Left $ "Expected Table, got: " <> Text.pack (show v)
-
-instance FromTOML TOML.Value where
-  fromTOML = Right
-
-withObject :: Text -> (Map Text TOML.Value -> Either Text a) -> TOML.Value -> Either Text a
-withObject label f = \case
-  TOML.Table kvs -> f $ Map.fromList kvs
-  v -> Left $ "Could not parse " <> label <> ", got: " <> Text.pack (show v)
-
-(.:) :: FromTOML a => Map Text TOML.Value -> Text -> Either Text a
-o .: key =
-  maybe (Left $ "Could not find " <> key <> " in " <> Text.pack (show o)) fromTOML $
-    Map.lookup key o
-
-(.:?) :: FromTOML a => Map Text TOML.Value -> Text -> Either Text (Maybe a)
-o .:? key = traverse fromTOML $ Map.lookup key o
-
-(.!=) :: Either Text (Maybe a) -> a -> Either Text a
-m .!= def = fromMaybe def <$> m
-
--- TODO: proper Parser type, show path in error
-instance Alternative (Either Text) where
-  empty = Left "Parse error"
-
-  Right x <|> _ = Right x
-  Left _ <|> x = x

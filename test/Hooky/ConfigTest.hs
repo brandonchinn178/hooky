@@ -41,16 +41,16 @@ testParseConfig =
       config -> error $ "Got unexpected config: " <> show config
     testParseChecks =
       testGroup
-        "Config.check[]"
+        "Config.checks[]"
         [ testCase "has a reasonable default" $ do
             let Config{cfgChecks} = parse []
             cfgChecks @?= []
         , testCase "parses a minimal check" $ do
             let check =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'always-success'"
-                    , "command = 'true'"
+                    [ "checks:"
+                    , "- name: always-success"
+                    , "  command: 'true'"
                     ]
             check
               @?= Check
@@ -61,35 +61,34 @@ testParseConfig =
         , testCase "parses multiple checks" $ do
             let Config{cfgChecks} =
                   parse $
-                    [ "[[check]]"
-                    , "name = 'test1'"
-                    , "command = 'true'"
-                    , "[[check]]"
-                    , "name = 'test2'"
-                    , "command = 'true'"
+                    [ "checks:"
+                    , "- name: test1"
+                    , "  command: 'true'"
+                    , "- name: test2"
+                    , "  command: 'true'"
                     ]
             map checkName cfgChecks @?= ["test1", "test2"]
         , testCase "parses a check source" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "source = 'upstream'"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  source: upstream"
                     ]
             checkCommand @?= CommandFromSource (SourceReference "upstream" "test")
         , testCase "parses a check source with explicit check name" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'my-test'"
-                    , "source = { name = 'upstream', check = 'test' }"
+                    [ "checks:"
+                    , "- name: my-test"
+                    , "  source: { name: upstream, check: test }"
                     ]
             checkCommand @?= CommandFromSource (SourceReference "upstream" "test")
         , testCase "errors without command nor source" $ do
             let result =
                   parseEither
-                    [ "[[check]]"
-                    , "name = 'test'"
+                    [ "checks:"
+                    , "- name: test"
                     ]
             case result of
               Left _ -> return ()
@@ -97,43 +96,43 @@ testParseConfig =
         , testCase "parses a single-executable command" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "command = 'true'"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  command: 'true'"
                     ]
             checkCommand @?= ExplicitCommand ["true"]
         , testCase "parses a shell command" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "command = 'python3 do_check.py'"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  command: python3 do_check.py"
                     ]
             checkCommand @?= ExplicitCommand ["/bin/sh", "-c", "python3 do_check.py \"$@\"", "/bin/sh"]
         , testCase "parses a command array" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "command = ['python', 'test.py']"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  command: [python, test.py]"
                     ]
             checkCommand @?= ExplicitCommand ["python", "test.py"]
         , testCase "parses a single file filter" $ do
             let Check{checkFiles} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "command = 'true'"
-                    , "files = '*.txt'"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  command: 'true'"
+                    , "  files: '*.txt'"
                     ]
             checkFiles @?= ["*.txt"]
         , testCase "parses multiple file filters" $ do
             let Check{checkFiles} =
                   getOneCheck . parse $
-                    [ "[[check]]"
-                    , "name = 'test'"
-                    , "command = 'true'"
-                    , "files = ['*.txt', '*.md']"
+                    [ "checks:"
+                    , "- name: test"
+                    , "  command: 'true'"
+                    , "  files: ['*.txt', '*.md']"
                     ]
             checkFiles @?= ["*.txt", "*.md"]
         ]
@@ -144,17 +143,18 @@ testParseConfig =
       config -> error $ "Got unexpected config: " <> show config
     testParseSources =
       testGroup
-        "Config.source.*"
+        "Config.sources.*"
         [ testCase "has a reasonable default" $ do
             let Config{cfgSources} = parse []
             cfgSources @?= Map.empty
         , testCase "parses multiple sources" $ do
             let Config{cfgSources} =
                   parse
-                    [ "[source.test1]"
-                    , "url = 'https://example.com/checks1.tar.gz'"
-                    , "[source.test2]"
-                    , "url = 'https://example.com/checks2.tar.gz'"
+                    [ "sources:"
+                    , "  test1:"
+                    , "    url: https://example.com/checks1.tar.gz"
+                    , "  test2:"
+                    , "    url: https://example.com/checks2.tar.gz"
                     ]
             cfgSources
               @?= Map.fromList
@@ -164,32 +164,36 @@ testParseConfig =
         , testCase "parses a github url" $ do
             let source =
                   getTestSource . parse $
-                    [ "[source.test]"
-                    , "github = 'google/hooky-checks'"
-                    , "rev = 'v1.0.0'"
+                    [ "sources:"
+                    , "  test:"
+                    , "    github: google/hooky-checks"
+                    , "    rev: v1.0.0"
                     ]
             source @?= GitSource "https://github.com/google/hooky-checks.git" "v1.0.0"
         , testCase "shows helpful error when github repo is not well-specified" $ do
             let result =
                   parseEither $
-                    [ "[source.test]"
-                    , "github = 'a/b/c'"
-                    , "rev = 'v1.0.0'"
+                    [ "sources:"
+                    , "  test:"
+                    , "    github: a/b/c"
+                    , "    rev: v1.0.0"
                     ]
-            result @?= Left "Invalid github repository: a/b/c"
+            result @?= Left "Aeson exception:\nError in $.sources.test: Invalid github repository: a/b/c"
         , testCase "parses a git url" $ do
             let source =
                   getTestSource . parse $
-                    [ "[source.test]"
-                    , "git = 'https://github.com/google/hooky-checks.git'"
-                    , "rev = 'abcdef'"
+                    [ "sources:"
+                    , "  test:"
+                    , "    git: https://github.com/google/hooky-checks.git"
+                    , "    rev: abcdef"
                     ]
             source @?= GitSource "https://github.com/google/hooky-checks.git" "abcdef"
         , testCase "parses an archive url" $ do
             let source =
                   getTestSource . parse $
-                    [ "[source.test]"
-                    , "url = 'https://google.com/hooky-checks.tar.gz'"
+                    [ "sources:"
+                    , "  test:"
+                    , "    url: https://google.com/hooky-checks.tar.gz"
                     ]
             source @?= TarSource "https://google.com/hooky-checks.tar.gz"
         ]
@@ -203,13 +207,13 @@ testParseConfig =
         , testCase "parses a single exclude pattern" $ do
             let Config{cfgExclude} =
                   parse
-                    [ "exclude = '*.txt'"
+                    [ "exclude: '*.txt'"
                     ]
             cfgExclude @?= ["*.txt"]
         , testCase "parses multiple exclude patterns" $ do
             let Config{cfgExclude} =
                   parse
-                    [ "exclude = ['*.txt', '*.md']"
+                    [ "exclude: ['*.txt', '*.md']"
                     ]
             cfgExclude @?= ["*.txt", "*.md"]
         ]

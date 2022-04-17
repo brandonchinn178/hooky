@@ -47,7 +47,7 @@ cliOptions =
         [ long "config"
         , short 'c'
         , help "Path to config file"
-        , value "hooky-config.toml"
+        , value "hooky-config.yaml"
         , showDefault
         ]
 

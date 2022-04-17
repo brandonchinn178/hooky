@@ -23,6 +23,7 @@ ghc-options:
 library:
   source-dirs: src
   dependencies:
+    - aeson
     - base
     - bytestring
     - containers
@@ -30,8 +31,8 @@ library:
     - path
     - path-io
     - text
-    - toml-parser
     - typed-process
+    - yaml
 
 executables:
   hooky:

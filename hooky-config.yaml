@@ -1,0 +1,24 @@
+# TODO: uncomment
+# sources:
+#   hooky-checks:
+#     github: brandonchinn178/hooky-checks
+#     rev: v1.0.0
+
+checks:
+# - name: end-of-file-fixer
+#   source: hooky-checks
+
+- name: trailing-whitespace
+  command: sed -i '' -e 's/[[:space:]]*$//'
+
+# TODO: add setup hook
+# TODO: add label
+- name: fourmolu
+  # equivalent to:
+  #   command: ['/bin/sh', '-c', 'stack exec -- fourmolu -i "$@"', '/bin/sh']
+  # alternatively:
+  #   command: ['stack', 'exec', '--', 'fourmolu', '-i', '-e']
+  command: stack exec -- fourmolu -i -e
+  # equivalent to:
+  #   files: ['**/*.hs']
+  files: '**/*.hs'

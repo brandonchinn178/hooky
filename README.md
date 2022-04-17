@@ -4,7 +4,7 @@ Minimal git hooks manager.
 
 Features:
 * Installs as a compiled executable; no need to have Python/Node/whatever installed to bootstrap.
-* Configure checks to run in git's pre-commit hook via a TOML configuration file
+* Configure checks to run in git's pre-commit hook via a YAML configuration file
     * Allow checks to define the files to run the command for
 * Only runs on staged files
     * Supports partially staged files
