@@ -2,15 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-import Control.Monad ((>=>))
+import Control.Monad (unless, (>=>))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Options.Applicative hiding (action)
 import Path (Abs, Dir, File, Path, parseAbsFile, toFilePath)
-import Path.IO (getCurrentDir, resolveFile)
+import Path.IO (doesFileExist, getCurrentDir, resolveFile)
 import System.Environment (getExecutablePath)
 import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 
 import Hooky.Config (Config, parseConfig)
 import Hooky.Install (doInstall)
@@ -72,8 +73,12 @@ cliOptions =
 main :: IO ()
 main = do
   CLIOptions{..} <- execParser cliOptions
+
   cwd <- getCurrentDir
   configFile <- resolveFile cwd cliConfigFilePath
+  configFileExists <- doesFileExist configFile
+  unless configFileExists $
+    abort $ "Config file doesn't exist: " <> show configFile
 
   case cliCommand of
     CommandInstall{..} -> do
@@ -99,4 +104,4 @@ readConfig = readConfigFile >=> decodeConfig
     decodeConfig = either (abort . Text.unpack) return . parseConfig
 
 abort :: String -> IO a
-abort s = putStrLn s >> exitFailure
+abort s = hPutStrLn stderr s >> exitFailure
