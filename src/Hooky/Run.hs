@@ -34,7 +34,7 @@ doRun repo config RunOptions{..} = do
   let ExecutionPlan plan = compilePlan config files
   if null plan
     then do
-      putStrLn "No files to check"
+      putStrLn ">>>>> No files to check <<<<<"
       return True
     else do
       successes <-
