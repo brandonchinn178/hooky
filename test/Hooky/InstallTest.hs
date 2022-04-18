@@ -29,19 +29,19 @@ testDoInstall =
         withGitRepo $ \repo ->
           withTestScript $ \script getRunArgs -> do
             doInstall repo script []
-            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args <- getRunArgs <$> getPreCommitHookOutput repo []
             args @?= ["run"]
     , testCase "passes extra args to script" $
         withGitRepo $ \repo ->
           withTestScript $ \script getRunArgs -> do
             doInstall repo script ["--foo", "--bar", "a", "b", "c"]
-            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args <- getRunArgs <$> getPreCommitHookOutput repo []
             args @?= ["run", "--foo", "--bar", "a", "b", "c"]
     , testCase "quotes extra args" $
         withGitRepo $ \repo ->
           withTestScript $ \script getRunArgs -> do
             doInstall repo script ["a b c", "d", "e f"]
-            args <- getRunArgs <$> getPreCommitHookOutput repo
+            args <- getRunArgs <$> getPreCommitHookOutput repo []
             args @?= ["run", "a b c", "d", "e f"]
     , testCase "respects core.hooksPath" $ do
         withTestDir $ \hooksDir ->
@@ -57,7 +57,7 @@ testDoInstall =
               hookInHooksDirExists @?= True
 
               -- verify it runs correctly
-              args <- getRunArgs <$> getPreCommitHookOutput repo
+              args <- getRunArgs <$> getPreCommitHookOutput repo []
               args @?= ["run"]
     ]
   where
