@@ -5,12 +5,12 @@ module Hooky.Run (
   RunOptions (..),
 ) where
 
-import Control.Monad (forM, unless, when)
+import Control.Monad (forM, when)
 import Data.ByteString.Lazy qualified as ByteStringL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
 import Path (toFilePath)
-import System.Exit (ExitCode (..), exitFailure)
+import System.Exit (ExitCode (..))
 import System.IO (hFlush, stdout)
 import System.Process.Typed (proc, readProcessInterleaved)
 import Text.Printf (printf)
@@ -28,12 +28,14 @@ data RunOptions = RunOptions
   { showStdoutOnSuccess :: Bool
   }
 
-doRun :: GitRepo -> Config -> RunOptions -> IO ()
+doRun :: GitRepo -> Config -> RunOptions -> IO Bool
 doRun repo config RunOptions{..} = do
   files <- getStagedFiles repo
   let ExecutionPlan plan = compilePlan config files
   if null plan
-    then putStrLn "No files to check"
+    then do
+      putStrLn "No files to check"
+      return True
     else do
       successes <-
         forM plan $ \ExecutionStep{..} -> do
@@ -57,4 +59,4 @@ doRun repo config RunOptions{..} = do
               putStrLn "FAILED"
               showOutput
               return False
-      unless (and successes) exitFailure
+      return $ and successes

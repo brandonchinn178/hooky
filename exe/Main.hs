@@ -116,10 +116,12 @@ main = do
     CommandRun -> do
       repo <- getGitRepoOrFail "run" cwd
       config <- readConfig configFile
-      doRun repo config $
-        RunOptions
-          { showStdoutOnSuccess = cliLogLevel >= Verbose
-          }
+      success <-
+        doRun repo config $
+          RunOptions
+            { showStdoutOnSuccess = cliLogLevel >= Verbose
+            }
+      unless success exitFailure
 
 getGitRepoOrFail :: String -> Path Abs Dir -> IO GitRepo
 getGitRepoOrFail action cwd =
