@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Hooky.Run.ExecutionPlan (
@@ -47,7 +48,12 @@ compilePlan Config{..} files =
           { stepName = checkName
           , stepCommand =
               case checkCommand of
-                ExplicitCommand (cmd NonEmpty.:| args) -> ExecutionCommand cmd args
+                ExplicitCommand cmd -> ExecutionCommand cmd []
+                ExplicitCommandShell s ->
+                  -- TODO: explicit "$@" in command or pass_filenames = false
+                  -- should not add $@
+                  ExecutionCommand "/bin/sh" ["-c", s <> " \"$@\"", "/bin/sh"]
+                ExplicitCommandList (cmd NonEmpty.:| args) -> ExecutionCommand cmd args
                 CommandFromSource _ -> error "TODO: CommandFromSource" -- TODO
           , stepFiles
           }

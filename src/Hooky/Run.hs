@@ -47,6 +47,7 @@ doRun repo config RunOptions{..} = do
             readProcessInterleaved $
               proc
                 (Text.unpack cmd)
+                -- TODO: support pass_filenames = False
                 (map Text.unpack args <> (map toFilePath . NonEmpty.toList) stepFiles)
           let showOutput = ByteStringL.hPutStr stdout output
 

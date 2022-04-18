@@ -55,7 +55,7 @@ testParseConfig =
             check
               @?= Check
                 { checkName = "always-success"
-                , checkCommand = ExplicitCommand ["true"]
+                , checkCommand = ExplicitCommand "true"
                 , checkFiles = []
                 }
         , testCase "parses multiple checks" $ do
@@ -100,7 +100,7 @@ testParseConfig =
                     , "- name: test"
                     , "  command: 'true'"
                     ]
-            checkCommand @?= ExplicitCommand ["true"]
+            checkCommand @?= ExplicitCommand "true"
         , testCase "parses a shell command" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
@@ -108,7 +108,7 @@ testParseConfig =
                     , "- name: test"
                     , "  command: python3 do_check.py"
                     ]
-            checkCommand @?= ExplicitCommand ["/bin/sh", "-c", "python3 do_check.py \"$@\"", "/bin/sh"]
+            checkCommand @?= ExplicitCommandShell "python3 do_check.py"
         , testCase "parses a command array" $ do
             let Check{checkCommand} =
                   getOneCheck . parse $
@@ -116,7 +116,7 @@ testParseConfig =
                     , "- name: test"
                     , "  command: [python, test.py]"
                     ]
-            checkCommand @?= ExplicitCommand ["python", "test.py"]
+            checkCommand @?= ExplicitCommandList ["python", "test.py"]
         , testCase "parses a single file filter" $ do
             let Check{checkFiles} =
                   getOneCheck . parse $

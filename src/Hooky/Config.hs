@@ -30,7 +30,6 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Types (Parser)
 import Data.Bifunctor (first)
 import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -66,7 +65,9 @@ data Source
   deriving (Show, Eq)
 
 data CommandDefinition
-  = ExplicitCommand (NonEmpty Text)
+  = ExplicitCommand Text
+  | ExplicitCommandList (NonEmpty Text)
+  | ExplicitCommandShell Text
   | CommandFromSource SourceReference
   deriving (Show, Eq)
 
@@ -109,23 +110,20 @@ instance FromJSON Check where
 
     command <- o .:? "command" >>= parseCommand
     checkCommand <-
-      case (source, NonEmpty.nonEmpty command) of
+      case (source, command) of
         (Nothing, Nothing) -> fail "'command' or 'source' must be provided"
-        (Nothing, Just cmd) -> pure $ ExplicitCommand cmd
+        (Nothing, Just cmd) -> pure cmd
         (Just sourceRef, Nothing) -> pure $ CommandFromSource sourceRef
         (Just _, Just _) -> fail "Cannot specify both 'command' and 'source'"
     checkFiles <- oneOrArrayAt o "files"
     pure Check{..}
     where
       parseCommand = \case
-        Nothing -> pure []
+        Nothing -> pure Nothing
         Just (String s)
-          | ' ' `Text.elem` s ->
-              -- TODO: allow customizing (explicit "$@" in command should pass files as arguments to sh,
-              -- pass_filenames = false should not pass anything)
-              pure ["/bin/sh", "-c", s <> " \"$@\"", "/bin/sh"]
-          | otherwise -> pure [s]
-        Just v@(Array _) -> parseJSON v
+          | ' ' `Text.elem` s -> pure $ Just $ ExplicitCommandShell s
+          | otherwise -> pure $ Just $ ExplicitCommand s
+        Just v@(Array _) -> Just . ExplicitCommandList <$> parseJSON v
         v -> fail $ "Could not parse command: " <> show v
 
 instance FromJSON Source where

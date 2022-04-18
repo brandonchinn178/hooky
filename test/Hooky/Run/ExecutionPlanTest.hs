@@ -19,7 +19,7 @@ test =
     [ testCompilePlan
     ]
 
--- TODO: test ExecutionCommand from ExplicitCommand + CommandFromSource
+-- TODO: test ExecutionCommand from CommandDefinition
 testCompilePlan :: TestTree
 testCompilePlan =
   testGroup
@@ -61,6 +61,6 @@ basicCheck :: Check
 basicCheck =
   Check
     { checkName = "test"
-    , checkCommand = ExplicitCommand $ NonEmpty.singleton "true"
+    , checkCommand = ExplicitCommand "true"
     , checkFiles = []
     }
