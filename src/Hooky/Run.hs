@@ -2,9 +2,10 @@
 
 module Hooky.Run (
   doRun,
+  RunOptions (..),
 ) where
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, when)
 import Data.ByteString.Lazy qualified as ByteStringL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
@@ -23,8 +24,12 @@ import Hooky.Run.ExecutionPlan (
  )
 import Hooky.Utils.Git (GitRepo, getStagedFiles)
 
-doRun :: GitRepo -> Config -> IO ()
-doRun repo config = do
+data RunOptions = RunOptions
+  { showStdoutOnSuccess :: Bool
+  }
+
+doRun :: GitRepo -> Config -> RunOptions -> IO ()
+doRun repo config RunOptions{..} = do
   files <- getStagedFiles repo
   let ExecutionPlan plan = compilePlan config files
   if null plan
@@ -41,13 +46,15 @@ doRun repo config = do
               proc
                 (Text.unpack cmd)
                 (map Text.unpack args <> (map toFilePath . NonEmpty.toList) stepFiles)
+          let showOutput = ByteStringL.hPutStr stdout output
 
           case code of
             ExitSuccess -> do
               putStrLn "PASSED"
+              when showStdoutOnSuccess showOutput
               return True
             ExitFailure _ -> do
               putStrLn "FAILED"
-              ByteStringL.hPutStr stdout output
+              showOutput
               return False
       unless (and successes) exitFailure

@@ -3,10 +3,12 @@
 {-# LANGUAGE RecordWildCards #-}
 
 import Control.Monad (unless, (>=>))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Options.Applicative hiding (action)
+import Options.Applicative.NonEmpty (some1)
 import Path (Abs, Dir, File, Path, parseAbsFile, toFilePath)
 import Path.IO (doesFileExist, getCurrentDir, resolveFile)
 import System.Environment (getExecutablePath)
@@ -15,7 +17,7 @@ import System.IO (hPutStrLn, stderr)
 
 import Hooky.Config (Config, parseConfig)
 import Hooky.Install (doInstall)
-import Hooky.Run (doRun)
+import Hooky.Run (RunOptions (..), doRun)
 import Hooky.Utils.Git (GitRepo, getGitRepo)
 
 {-- CLI Options --}
@@ -23,6 +25,7 @@ import Hooky.Utils.Git (GitRepo, getGitRepo)
 data CLIOptions = CLIOptions
   { cliCommand :: CLICommand
   , cliConfigFilePath :: FilePath
+  , cliLogLevel :: LogLevel
   }
 
 data CLICommand
@@ -30,6 +33,16 @@ data CLICommand
       { extraRunArgs :: [Text]
       }
   | CommandRun
+
+data LogLevel
+  = XXQuiet
+  | XQuiet
+  | Quiet
+  | Normal
+  | Verbose
+  | XVerbose
+  | XXVerbose
+  deriving (Show, Eq, Ord)
 
 cliOptions :: ParserInfo CLIOptions
 cliOptions =
@@ -42,6 +55,7 @@ cliOptions =
       CLIOptions
         <$> parseCommand
         <*> parseConfigFilePath
+        <*> parseLogLevel
 
     parseConfigFilePath =
       strOption . mconcat $
@@ -68,6 +82,19 @@ cliOptions =
         ]
     parseRun = pure CommandRun
 
+    -- TODO: add --quiet
+    parseLogLevel = parseVerbose <|> pure Normal
+    parseVerbose =
+      multiple (NonEmpty.fromList [Verbose, XVerbose, XXVerbose]) . mconcat $
+        [ long "verbose"
+        , short 'v'
+        , help "Make output noisier"
+        ]
+
+    multiple opts m =
+      let opts' = opts <> NonEmpty.repeat (NonEmpty.last opts)
+       in fst . NonEmpty.last . NonEmpty.zip opts' <$> some1 (flag' () m)
+
 {-- Entrypoint --}
 
 main :: IO ()
@@ -89,7 +116,10 @@ main = do
     CommandRun -> do
       repo <- getGitRepoOrFail "run" cwd
       config <- readConfig configFile
-      doRun repo config
+      doRun repo config $
+        RunOptions
+          { showStdoutOnSuccess = cliLogLevel >= Verbose
+          }
 
 getGitRepoOrFail :: String -> Path Abs Dir -> IO GitRepo
 getGitRepoOrFail action cwd =
