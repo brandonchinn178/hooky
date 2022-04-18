@@ -59,6 +59,7 @@ tests:
       - hooky
       - path
       - path-io
+      - silently
       - tasty
       - tasty-hunit
       - text

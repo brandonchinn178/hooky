@@ -5,10 +5,13 @@ module Hooky.RunTest (test) where
 
 import Data.Text qualified as Text
 import Path (parseAbsDir, relfile, toFilePath, (</>))
+import System.IO.Silently qualified as Silently
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Hooky.Config (Check (..), Config (..))
 import Hooky.Install (doInstall)
+import Hooky.Run (RunOptions (..), doRun)
 import Hooky.TestUtils (getPreCommitHookOutput, withGitRepo, withTestDir)
 import Hooky.Utils.Git (git_, inRepo)
 import Paths_hooky (getBinDir)
@@ -20,7 +23,6 @@ test =
     [ testDoRun
     ]
 
--- TODO: running various command formats
 testDoRun :: TestTree
 testDoRun =
   testGroup
@@ -51,4 +53,39 @@ testDoRun =
             writeFile file "edit"
             out2 <- getCheckedFiles <$> getPreCommitHookOutput repo ["--all"]
             out2 @?= ["a.txt"]
+    , testCase "works when specifying a single command" $
+        withGitRepo $ \repo -> do
+          getRunResult repo basicConfig
+    -- , testCase "works when specifying a shell command"
+    -- , testCase "works when specifying a shell command with explicit $@"
+    -- , testCase "works when specifying a command list"
+    -- , testCase "shows stdout on success when configured"
     ]
+
+getRunResult :: GitRepo -> Config -> IO (String, Bool)
+getRunResult repo config = getRunResult' repo config testRunOptions
+
+getRunResult' :: GitRepo -> Config -> RunOptions -> IO (String, Bool)
+getRunResult' repo config opts = Silently.capture $ doRun repo config opts
+
+testRunOptions :: RunOptions
+testRunOptions =
+  RunOptions
+    { showStdoutOnSuccess = False
+    }
+
+basicConfig :: Config
+basicConfig =
+  Config
+    { cfgChecks = [basicCheck]
+    , cfgSources = mempty
+    , cfgExclude = []
+    }
+
+basicCheck :: Check
+basicCheck =
+  Check
+    { checkName = "test"
+    , checkCommand = ExplicitCommand "true"
+    , checkFiles = []
+    }
