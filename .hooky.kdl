@@ -1,0 +1,31 @@
+files !*.golden
+
+hook hooky {
+    command hooky lint {
+        fix_arg --fix
+        pass_files file
+    }
+    files *
+}
+
+hook fourmolu {
+    command "tools/fourmolu" -e {
+        check_arg -m check
+        fix_arg -m inplace
+    }
+    files *.hs
+}
+
+lint_rules {
+    - check_broken_symlinks
+    - check_case_conflict
+    - check_merge_conflict
+    - end_of_file_fixer
+    - no_commit_to_branch {
+        branches {
+            - main
+            - release-*
+        }
+    }
+    - trailing_whitespace
+}

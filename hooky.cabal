@@ -1,0 +1,78 @@
+cabal-version: 3.0
+
+name: hooky
+version: 0.0.0
+synopsis: A minimal git hooks manager
+description: A minimal git hooks manager.
+homepage: https://github.com/brandonchinn178/hooky#readme
+bug-reports: https://github.com/brandonchinn178/hooky/issues
+author: Brandon Chinn <brandonchinn178@gmail.com>
+maintainer: Brandon Chinn <brandonchinn178@gmail.com>
+license: BSD-3-Clause
+license-file: LICENSE.md
+category: Tools
+build-type: Simple
+extra-source-files:
+  README.md
+
+source-repository head
+  type: git
+  location: https://github.com/brandonchinn178/hooky
+
+library
+  hs-source-dirs: src
+  exposed-modules:
+    Hooky.Config
+  other-modules:
+    Data.KDL
+  build-depends:
+      base < 5
+    , containers
+    , hustle
+    , scientific
+    , text
+  default-language: GHC2021
+  ghc-options: -Wall -Wcompat
+
+executable hooky
+  main-is: src/Main.hs
+  build-depends:
+      base
+    , directory
+    , hooky
+    , optparse-applicative
+    , process
+    , text
+  default-language: GHC2021
+  ghc-options: -Wall -Wcompat
+
+-- test-suite skeletest-tests
+--   type: exitcode-stdio-1.0
+--   ghc-options: -F -pgmF=skeletest-preprocessor
+--   build-tool-depends: skeletest:skeletest-preprocessor
+--   hs-source-dirs: test
+--   main-is: Main.hs
+--   other-modules:
+--     ExampleSpec
+--     Skeletest.AssertionsSpec
+--     Skeletest.Internal.CLISpec
+--     Skeletest.Internal.FixturesSpec
+--     Skeletest.Internal.SnapshotSpec
+--     Skeletest.Internal.SpecSpec
+--     Skeletest.Internal.TestTargetsSpec
+--     Skeletest.MainSpec
+--     Skeletest.PredicateSpec
+--     Skeletest.PropSpec
+--     Skeletest.TestUtils.Integration
+--   build-depends:
+--       base
+--     , aeson
+--     , containers
+--     , directory
+--     , filepath
+--     , skeletest
+--     , process
+--     , text
+--     , unliftio
+--   default-language: GHC2021
+--   ghc-options: -Wall -Wcompat

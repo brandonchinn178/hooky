@@ -1,0 +1,11 @@
+packages: .
+
+with-compiler: ghc-9.12
+
+program-options
+  ghc-options: -Werror
+
+source-repository-package
+  type: git
+  location: https://github.com/brandonchinn178/hustle
+  tag: bf7d9b7ba13362bf3bd5f112436766bcce0c7473
