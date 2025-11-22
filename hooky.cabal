@@ -23,11 +23,13 @@ library
   hs-source-dirs: src
   exposed-modules:
     Hooky.Config
+    Hooky.Lint
   other-modules:
     Data.KDL
   build-depends:
       base < 5
     , containers
+    , directory
     , hustle
     , scientific
     , text
@@ -39,6 +41,7 @@ executable hooky
   build-depends:
       base
     , directory
+    , filepath
     , hooky
     , optparse-applicative
     , process

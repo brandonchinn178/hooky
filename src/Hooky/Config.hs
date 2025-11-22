@@ -7,9 +7,15 @@
 module Hooky.Config (
   Config (..),
   parseConfig,
+  Glob (..),
+  HookConfig (..),
+  PassFilesMode (..),
+  LintRule (..),
+  LintRuleRule (..),
+  lintRuleName,
 ) where
 
-import Control.Monad ((<=<), (>=>))
+import Control.Monad (when, (<=<), (>=>))
 import Data.KDL qualified as KDL
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -24,31 +30,6 @@ data Config = Config
   }
   deriving (Show, Eq)
 
-data HookConfig = HookConfig
-  { name :: Text
-  , cmdArgs :: [Text]
-  , checkArgs :: [Text]
-  , fixArgs :: [Text]
-  , passFiles :: PassFilesMode
-  , files :: [Glob]
-  }
-  deriving (Show, Eq)
-
-data PassFilesMode
-  = PassFiles_None
-  | PassFiles_XArgs
-  | PassFiles_File
-  deriving (Show, Eq)
-
-data LintRule
-  = LintRule_CheckBrokenSymlinks
-  | LintRule_CheckCaseConflict
-  | LintRule_CheckMergeConflict
-  | LintRule_EndOfFileFixer
-  | LintRule_NoCommitToBranch [Glob]
-  | LintRule_TrailingWhitespace
-  deriving (Show, Eq)
-
 parseConfig :: Text -> Either Text Config
 parseConfig = KDL.decodeWith decodeConfig
 
@@ -58,6 +39,16 @@ decodeConfig doc = do
   hooks <- fmap Map.fromList $ mapM decodeHook $ KDL.findNodes "hook" doc
   lintRules <- mapM decodeLintRule $ KDL.getDashChildren "lint_rules" doc
   pure Config{..}
+
+data HookConfig = HookConfig
+  { name :: Text
+  , cmdArgs :: [Text]
+  , checkArgs :: [Text]
+  , fixArgs :: [Text]
+  , passFiles :: PassFilesMode
+  , files :: [Glob]
+  }
+  deriving (Show, Eq)
 
 decodeHook :: KDL.AnnNode -> KDL.Decoder (Text, HookConfig)
 decodeHook hookNode = do
@@ -74,34 +65,84 @@ decodeHook hookNode = do
   passFiles <- fromMaybe PassFiles_XArgs <$> KDL.decodeArgAt "pass_files" commandChildren
 
   files <- KDL.decodeArgsAt "files" hookChildren
+  when (null files) $ KDL.fail $ "Hook '" <> name <> "' does not specify 'files', a required field"
 
   pure (name, HookConfig{..})
+
+{----- LintRule -----}
+
+data LintRule = LintRule
+  { rule :: LintRuleRule
+  , files :: [Glob]
+  }
+  deriving (Show, Eq)
+
+data LintRuleRule
+  = LintRule_CheckBrokenSymlinks
+  | LintRule_CheckCaseConflict
+  | LintRule_CheckMergeConflict
+  | LintRule_EndOfFileFixer
+  | LintRule_NoCommitToBranch [Glob]
+  | LintRule_TrailingWhitespace
+  deriving (Show, Eq)
+
+lintRuleName :: LintRule -> Text
+lintRuleName LintRule{rule} =
+  case rule of
+    -- Must match decodeLintRule
+    LintRule_CheckBrokenSymlinks{} -> "check_broken_symlinks"
+    LintRule_CheckCaseConflict{} -> "check_case_conflict"
+    LintRule_CheckMergeConflict{} -> "check_merge_conflict"
+    LintRule_EndOfFileFixer{} -> "end_of_file_fixer"
+    LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
+    LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
 decodeLintRule :: KDL.AnnNode -> KDL.Decoder LintRule
 decodeLintRule node = do
   name <- decodeReqArg "Encountered lint rule without a name" node
-  case name of
-    "check_broken_symlinks" ->
-      pure LintRule_CheckBrokenSymlinks
-    "check_case_conflict" ->
-      pure LintRule_CheckCaseConflict
-    "check_merge_conflict" ->
-      pure LintRule_CheckMergeConflict
-    "end_of_file_fixer" ->
-      pure LintRule_EndOfFileFixer
-    "no_commit_to_branch" -> do
-      branches <-
-        case KDL.getDashChildren "branches" $ KDL.nodeChildren node of
-          [] -> pure [toGlob "main", toGlob "master"]
-          branches -> mapM (decodeReqArg "no_commit_to_branch.branch missing name") branches
-      pure $ LintRule_NoCommitToBranch branches
-    "trailing_whitespace" ->
-      pure LintRule_TrailingWhitespace
-    _ ->
-      KDL.fail $ "Unknown lint rule: " <> name
 
-decodeReqArg :: KDL.DecodeValue a => Text -> KDL.AnnNode -> KDL.Decoder a
-decodeReqArg msg = maybe (KDL.fail msg) pure <=< KDL.decodeArg
+  let lintNodes = KDL.nodeChildren node
+  rule <-
+    case name of
+      "check_broken_symlinks" ->
+        pure LintRule_CheckBrokenSymlinks
+      "check_case_conflict" ->
+        pure LintRule_CheckCaseConflict
+      "check_merge_conflict" ->
+        pure LintRule_CheckMergeConflict
+      "end_of_file_fixer" ->
+        pure LintRule_EndOfFileFixer
+      "no_commit_to_branch" -> do
+        branches <-
+          case KDL.getDashChildren "branches" lintNodes of
+            [] -> pure [toGlob "main", toGlob "master"]
+            branches -> mapM (decodeReqArg "no_commit_to_branch.branch missing name") branches
+        pure $ LintRule_NoCommitToBranch branches
+      "trailing_whitespace" ->
+        pure LintRule_TrailingWhitespace
+      _ ->
+        KDL.fail $ "Unknown lint rule: " <> name
+
+  files <- KDL.decodeArgsAt "files" lintNodes
+
+  pure LintRule{..}
+
+{----- PassFilesMode -----}
+
+data PassFilesMode
+  = PassFiles_None
+  | PassFiles_XArgs
+  | PassFiles_File
+  deriving (Show, Eq)
+
+instance KDL.DecodeValue PassFilesMode where
+  decodeValue = KDL.decodeValue >=> \case
+    Nothing -> pure PassFiles_None
+    Just "xargs" -> pure PassFiles_XArgs
+    Just "file" -> pure PassFiles_File
+    Just s -> KDL.fail $ "Invalid pass_files value: " <> s
+
+{----- Glob -----}
 
 -- | TODO: make proper data type
 -- (isNegate, [Left isStarStar, Right lit])
@@ -137,12 +178,10 @@ renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap 
       Left False -> "*"
       Right s -> Text.pack s
 
-instance KDL.DecodeValue PassFilesMode where
-  decodeValue = KDL.decodeValue >=> \case
-    Nothing -> pure PassFiles_None
-    Just "xargs" -> pure PassFiles_XArgs
-    Just "file" -> pure PassFiles_File
-    Just s -> KDL.fail $ "Invalid pass_files value: " <> s
-
 instance KDL.DecodeValue Glob where
   decodeValue = fmap toGlob . KDL.decodeValue
+
+{----- Utilities -----}
+
+decodeReqArg :: KDL.DecodeValue a => Text -> KDL.AnnNode -> KDL.Decoder a
+decodeReqArg msg = maybe (KDL.fail msg) pure <=< KDL.decodeArg

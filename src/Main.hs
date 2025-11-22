@@ -1,32 +1,31 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-import Control.Monad (unless)
--- import Data.List.NonEmpty qualified as NonEmpty
--- import Data.Text (Text)
+import Control.Monad (forM, unless)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
-import Options.Applicative hiding (action)
--- import Options.Applicative.NonEmpty (some1)
--- import Path (Abs, Dir, File, Path, parseAbsFile, toFilePath)
--- import Path.IO (doesFileExist, getCurrentDir, resolveFile)
+import Hooky.Config (Config (..), parseConfig)
+import Hooky.Lint (
+  LintRunConfig (..),
+  renderLintReport,
+  runLintRules,
+ )
+import Options.Applicative qualified as Opt
 -- import System.Environment (getExecutablePath)
 import System.Directory (doesFileExist, makeAbsolute)
 import System.Exit (ExitCode (..), exitFailure)
+import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (readProcessWithExitCode)
 
-import Hooky.Config (parseConfig)
--- import Hooky.Install (doInstall)
--- import Hooky.Run (RunOptions (..), doRun)
--- import Hooky.Utils.Git (GitRepo, getGitRepo)
-
-{-- CLI Options --}
+{----- CLI Options -----}
 
 data CLIOptions = CLIOptions
-  { cliCommand :: CLICommand
-  , cliConfigFilePath :: FilePath
+  { command :: CLICommand
+  , configFilePath :: Maybe FilePath
   }
 
 data CLICommand
@@ -34,74 +33,112 @@ data CLICommand
   | CommandRun
   | CommandFix
   | CommandLint
+      { files :: [FilePath]
+      , autofix :: Bool
+      }
 
-cliOptions :: ParserInfo CLIOptions
+cliOptions :: Opt.ParserInfo CLIOptions
 cliOptions =
-  info (helper <*> parseOptions) . mconcat $
-    [ fullDesc
-    , header "Hooky: A minimal git hooks manager"
+  Opt.info (Opt.helper <*> parseOptions) . mconcat $
+    [ Opt.fullDesc
+    , Opt.header "Hooky: A minimal git hooks manager"
     ]
   where
-    parseOptions =
-      CLIOptions
-        <$> parseCommand
-        <*> parseConfigFilePath
+    parseOptions = do
+      command <-
+        Opt.hsubparser . mconcat $
+          [ Opt.command "install" (Opt.info parseInstall $ Opt.progDesc "Install hooky as the git pre-commit hook")
+          , Opt.command "run" (Opt.info parseRun $ Opt.progDesc "Run hooks")
+          , Opt.command "fix" (Opt.info parseFix $ Opt.progDesc "Run hooks with autofixing enabled")
+          , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
+          ]
 
-    parseConfigFilePath =
-      strOption . mconcat $
-        [ long "config"
-        , short 'c'
-        , help "Path to config file"
-        , value ".hooky.kdl"
-        , showDefault
-        ]
+      configFilePath <-
+        Opt.optional . Opt.strOption . mconcat $
+          [ Opt.long "config"
+          , Opt.short 'c'
+          , Opt.help "Path to config file (default: .hooky.kdl)"
+          ]
 
-    parseCommand =
-      hsubparser . mconcat $
-        [ command "install" (info parseInstall $ progDesc "Install hooky as the git pre-commit hook")
-        , command "run" (info parseRun $ progDesc "Run hooks")
-        , command "fix" (info parseFix $ progDesc "Run hooks with autofixing enabled")
-        , command "lint" (info parseLint $ progDesc "Run builtin hooky rules")
-        ]
+      pure CLIOptions{..}
 
-    parseInstall = pure CommandInstall
-    parseRun = pure CommandRun
-    parseFix = pure CommandFix
-    parseLint = pure CommandLint
+    parseInstall = do
+      pure CommandInstall
 
-{-- Entrypoint --}
+    parseRun = do
+      pure CommandRun
+
+    parseFix = do
+      pure CommandFix
+
+    parseLint = do
+      files <-
+        Opt.some . Opt.argument Opt.str . mconcat $
+          [ Opt.metavar "FILES"
+          ]
+      autofix <-
+        Opt.switch . mconcat $
+          [ Opt.long "fix"
+          , Opt.help "Whether to fix issues"
+          ]
+      pure CommandLint{..}
+
+{----- Entrypoint -----}
 
 main :: IO ()
 main = do
-  CLIOptions{..} <- execParser cliOptions
+  CLIOptions{..} <- Opt.execParser cliOptions
 
   repo <- readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] "" >>= \case
     (ExitFailure _, _, _) -> abort "hooky: not currently in a git repository"
-    (ExitSuccess, stdout, _) -> pure stdout
+    (ExitSuccess, stdout, _) -> pure $ (Text.unpack . Text.strip . Text.pack) stdout
 
-  configFile <- makeAbsolute cliConfigFilePath
+  configFile <-
+    case configFilePath of
+      Nothing -> pure $ repo </> ".hooky.kdl"
+      Just fp -> makeAbsolute fp
+
   configFileExists <- doesFileExist configFile
   unless configFileExists $
     abort $ "Config file doesn't exist: " <> configFile
 
   config <- either (abort . Text.unpack) pure . parseConfig =<< Text.readFile configFile
 
-  print repo
-  print config
+  case command of
+    CommandInstall -> do
+      -- exe <- getExecutablePath >>= parseAbsFile
+      -- let args = ["--config", Text.pack (toFilePath configFile)]
+      -- doInstall repo exe args
+      error "TODO: install"
+    CommandRun -> do
+      -- config <- loadConfig configFile
+      -- success <-
+      --   doRun repo config $
+      --     RunOptions
+      --       { showStdoutOnSuccess = cliLogLevel >= Verbose
+      --       }
+      -- unless success exitFailure
+      error "TODO: run"
+    CommandFix -> do
+      error "TODO: fix"
+    CommandLint{..} ->
+      cmdLint
+        LintRunConfig
+          { repo = repo
+          , autofix = autofix
+          , rules = let Config{lintRules} = config in lintRules
+          }
+        files
 
-  -- case cliCommand of
-  --   CommandInstall -> do
-  --     exe <- getExecutablePath >>= parseAbsFile
-  --     let args = ["--config", Text.pack (toFilePath configFile)]
-  --     doInstall repo exe args
-  --   CommandRun -> do
-  --     config <- loadConfig configFile
-  --     success <-
-  --       doRun repo config $
-  --         RunOptions
-  --           { showStdoutOnSuccess = cliLogLevel >= Verbose
-  --           }
-  --     unless success exitFailure
+cmdLint :: LintRunConfig -> [FilePath] -> IO ()
+cmdLint lintConfig files0 = do
+  files <- fmap concat . forM files0 $ \file ->
+    case file of
+      '@' : f -> map Text.unpack . Text.lines <$> Text.readFile f
+      f -> pure [f]
+
+  report <- runLintRules lintConfig files
+  Text.putStrLn $ renderLintReport report
 
 abort :: String -> IO a
 abort s = hPutStrLn stderr s >> exitFailure
