@@ -25,6 +25,11 @@ module Data.KDL (
   nodeProps,
   nodeChildren,
 
+  -- * TODO: categorize
+  renderAnn,
+  renderAnnValue,
+  renderValue,
+
   -- * Node list helpers
   findNode,
   findNodes,
@@ -33,23 +38,6 @@ module Data.KDL (
   getDashChildren,
 
   -- * Decode
-  DecodeResult,
-  fromDecodeResult,
-  unexpectedValue,
-  fail,
-
-  -- ** API
-  decodeWith,
-  decodeFileWith,
-  DecodeValue (..),
-  decodeAnnValue,
-  decodeArgAt,
-  decodeArgsAt,
-  decodeArg,
-  decodeArgs,
-  decodeProps,
-
-  -- ** API v2
   fail_v2,
   lift_v2,
   withDecoder_v2,
@@ -96,7 +84,7 @@ module Data.KDL (
 import Control.Applicative (Alternative (..))
 import Control.Arrow (Arrow (..), ArrowChoice (..), (>>>))
 import Control.Category qualified as Category
-import Control.Monad (forM, unless, when, (<=<), (>=>))
+import Control.Monad (forM, unless, when, (>=>))
 import Data.Int (Int64)
 import Data.List (partition)
 import Data.Map.Strict (Map)
@@ -236,91 +224,6 @@ nodeProps = (.obj.props)
 
 nodeChildren :: AnnNode -> [AnnNode]
 nodeChildren = (.obj.children)
-
-{----- Decode API -----}
-
-decodeWith :: (Document -> DecodeResult a) -> Text -> Either Text a
-decodeWith decoder = fromDecodeResult . decoder <=< parse
-
-decodeFileWith :: (Document -> DecodeResult a) -> FilePath -> IO (Either Text a)
-decodeFileWith decoder = fmap (fromDecodeResult . decoder =<<) . parseFile
-
-decodeArgAt :: DecodeValue a => Identifier -> [AnnNode] -> DecodeResult (Maybe a)
-decodeArgAt name = maybe (pure Nothing) decodeArg . findNode name
-
-decodeArgsAt :: DecodeValue a => Identifier -> [AnnNode] -> DecodeResult [a]
-decodeArgsAt name = maybe (pure []) decodeArgs . findNode name
-
-decodeArg :: DecodeValue a => AnnNode -> DecodeResult (Maybe a)
-decodeArg = traverse decodeAnnValue . listToMaybe . nodeArgs
-
-decodeArgs :: DecodeValue a => AnnNode -> DecodeResult [a]
-decodeArgs = mapM decodeAnnValue . nodeArgs
-
-decodeProps :: DecodeValue a => AnnNode -> DecodeResult (Map Identifier a)
-decodeProps = traverse decodeAnnValue . nodeProps
-
-{----- DecodeResult -----}
-
-newtype DecodeResult a = DecodeResult (Either Text a)
-  deriving (Functor, Applicative, Monad)
-
-fromDecodeResult :: DecodeResult a -> Either Text a
-fromDecodeResult (DecodeResult x) = x
-
-unexpectedValue :: Text -> AnnValue -> DecodeResult a
-unexpectedValue expectedType actual = fail $ "Expected '" <> expectedType <> "', got: " <> renderAnnValue actual
-
-fail :: Text -> DecodeResult a
-fail = DecodeResult . Left
-
-{----- DecodeValue -----}
-
-decodeAnnValue :: forall a. DecodeValue a => AnnValue -> DecodeResult a
-decodeAnnValue = \case
-  Ann{ann = Just givenAnn} | (not . null) validAnns && givenAnn `notElem` validAnns ->
-    fail $ "Value has type '" <> givenAnn <> "', expected: " <> (Text.pack . show) validAnns
-  v -> decodeValue v
-  where
-    validAnns = validTypeAnns (Proxy @a)
-
-class DecodeValue a where
-  validTypeAnns :: Proxy a -> [Text]
-  validTypeAnns _ = []
-
-  decodeValue :: AnnValue -> DecodeResult a
-
-instance DecodeValue AnnValue where
-  decodeValue = pure
-instance DecodeValue Value where
-  decodeValue = pure . (.obj)
-instance DecodeValue Text where
-  validTypeAnns _ = ["string", "text"]
-  decodeValue = \case
-    Ann{obj = Text x} -> pure x
-    v -> unexpectedValue "string" v
--- TODO: Add Word8, Int8, ...
-instance DecodeValue Integer where
-  validTypeAnns _ = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize"]
-  decodeValue = \case
-    Ann{obj = Number x} | Scientific.isInteger x ->
-      maybe (fail $ "Found large number, aborting: " <> (Text.pack . show) x) (pure . toInteger) $ Scientific.toBoundedInteger @Int64 x
-    v -> unexpectedValue "integer" v
--- TODO: Add Double, Float, Rational
-instance DecodeValue Scientific where
-  validTypeAnns _ = ["f32", "f64", "decimal64", "decimal128"]
-  decodeValue = \case
-    Ann{obj = Number x} -> pure x
-    v -> unexpectedValue "number" v
-instance DecodeValue Bool where
-  decodeValue = \case
-    Ann{obj = Bool x} -> pure x
-    v -> unexpectedValue "boolean" v
-instance DecodeValue a => DecodeValue (Maybe a) where
-  validTypeAnns _ = validTypeAnns (Proxy @a)
-  decodeValue = \case
-    Ann{obj = Null} -> pure Nothing
-    v -> Just <$> decodeValue v
 
 {----- Decode API -----}
 
@@ -543,7 +446,7 @@ checkFullNodeDecoded schema node = do
   unless (null node.obj.args) $
     decodeThrow (DecodeError_UnusedArgs node.obj.args)
   -- TODO: check props
-  checkAllNodesDecoded schema.childSchemas (nodeChildren node)
+  checkAllNodesDecoded schema.childSchemas node.obj.children
 
 type CountSpec = (Natural, Maybe Natural)
 newtype WithCountSpec decoder = WithCountSpec{run :: CountSpec -> decoder}
@@ -614,7 +517,7 @@ node_v2 name decoder0 = WithCountSpec $ \countSpec ->
 children_v2 :: NodesDecoder_v2 a -> NodeDecoder_v2 a
 children_v2 decoder =
   DecodeArrow_v2 mempty{childSchemas = decoder.schema} $ \(node, ()) -> do
-    (_, result) <- decoder.run (nodeChildren node, ())
+    (_, result) <- decoder.run (node.obj.children, ())
     pure (node{obj = node.obj{children = []}}, result)
 
 dashChildren_v2 :: Identifier -> NodeDecoder_v2 a -> NodesDecoder_v2 [a]
@@ -635,7 +538,7 @@ arg_v2 = WithCountSpec $ \countSpec ->
   where
     decoder = value_v2
     run countSpec (node, ()) = addContext ContextArgs $ do
-      (args, remainingArgs) <- splitCount countSpec $ nodeArgs node
+      (args, remainingArgs) <- splitCount countSpec node.obj.args
       results <-
         forM (zip args [0..]) $ \(arg, i) ->
           addContext (ContextIndex i) $ runDecoder_v2 decoder arg
