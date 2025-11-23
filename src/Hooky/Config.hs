@@ -32,13 +32,13 @@ data Config = Config
   deriving (Show, Eq)
 
 parseConfig :: Text -> Either Text Config
-parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith_v2 configDecoder
+parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith configDecoder
 
-configDecoder :: KDL.DocumentDecoder_v2 Config
-configDecoder = KDL.document_v2 $ proc () -> do
-  files <- KDL.many_v2 $ KDL.argAt_v2 "files" -< ()
-  hooks <- fmap Map.fromList $ KDL.many_v2 $ KDL.node_v2 "hook" hookDecoder -< ()
-  lintRules <- KDL.dashChildren_v2 "lint_rules" lintRuleDecoder -< ()
+configDecoder :: KDL.DocumentDecoder Config
+configDecoder = KDL.document $ proc () -> do
+  files <- KDL.many $ KDL.argAt "files" -< ()
+  hooks <- fmap Map.fromList $ KDL.many $ KDL.node "hook" hookDecoder -< ()
+  lintRules <- KDL.dashChildren "lint_rules" lintRuleDecoder -< ()
   returnA -< Config{..}
 
 data HookConfig = HookConfig
@@ -51,18 +51,18 @@ data HookConfig = HookConfig
   }
   deriving (Show, Eq)
 
-hookDecoder :: KDL.NodeDecoder_v2 (Text, HookConfig)
+hookDecoder :: KDL.NodeDecoder (Text, HookConfig)
 hookDecoder = proc () -> do
-  name <- KDL.required_v2 KDL.arg_v2 -< ()
-  (cmdArgs, checkArgs, fixArgs, passFiles) <- KDL.children_v2 $ KDL.required_v2 $ KDL.node_v2 "command" commandDecoder -< ()
-  files <- KDL.children_v2 $ KDL.some_v2 $ KDL.argAt_v2 "files" -< ()
+  name <- KDL.required KDL.arg -< ()
+  (cmdArgs, checkArgs, fixArgs, passFiles) <- KDL.children $ KDL.required $ KDL.node "command" commandDecoder -< ()
+  files <- KDL.children $ KDL.some $ KDL.argAt "files" -< ()
   returnA -< (name, HookConfig{..})
   where
     commandDecoder = proc () -> do
-      cmdArgs <- KDL.some_v2 $ KDL.arg_v2 -< ()
-      checkArgs <- KDL.children_v2 $ KDL.many_v2 $ KDL.argAt_v2 "check_arg" -< ()
-      fixArgs <- KDL.children_v2 $ KDL.many_v2 $ KDL.argAt_v2 "fix_arg" -< ()
-      passFiles <- KDL.children_v2 $ KDL.setDefault_v2 PassFiles_XArgs $ KDL.optional_v2 $ KDL.argAt_v2 "pass_files" -< ()
+      cmdArgs <- KDL.some $ KDL.arg -< ()
+      checkArgs <- KDL.children $ KDL.many $ KDL.argAt "check_arg" -< ()
+      fixArgs <- KDL.children $ KDL.many $ KDL.argAt "fix_arg" -< ()
+      passFiles <- KDL.children $ KDL.setDefault PassFiles_XArgs $ KDL.optional $ KDL.argAt "pass_files" -< ()
       returnA -< (cmdArgs, checkArgs, fixArgs, passFiles)
 
 {----- LintRule -----}
@@ -93,14 +93,14 @@ lintRuleName LintRule{rule} =
     LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
     LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
-lintRuleDecoder :: KDL.NodeDecoder_v2 LintRule
+lintRuleDecoder :: KDL.NodeDecoder LintRule
 lintRuleDecoder = proc () -> do
   rule <- ruleDecoder -< ()
-  files <- KDL.children_v2 $ KDL.many_v2 $ KDL.argAt_v2 "files" -< ()
+  files <- KDL.children $ KDL.many $ KDL.argAt "files" -< ()
   returnA -< LintRule{..}
   where
     ruleDecoder = proc () -> do
-      name <- KDL.required_v2 $ KDL.arg_v2 -< ()
+      name <- KDL.required $ KDL.arg -< ()
       case name of
         "check_broken_symlinks" ->
           returnA -< LintRule_CheckBrokenSymlinks
@@ -112,16 +112,16 @@ lintRuleDecoder = proc () -> do
           returnA -< LintRule_EndOfFileFixer
         "no_commit_to_branch" -> do
           branches <-
-            KDL.children_v2 $
-              KDL.setDefault_v2 (map toGlob ["main", "master"]) . fmap maybeList $
-                KDL.dashChildren_v2 "branches" $
-                  KDL.required_v2 KDL.arg_v2
+            KDL.children $
+              KDL.setDefault (map toGlob ["main", "master"]) . fmap maybeList $
+                KDL.dashChildren "branches" $
+                  KDL.required KDL.arg
             -< ()
           returnA -< LintRule_NoCommitToBranch branches
         "trailing_whitespace" ->
           returnA -< LintRule_TrailingWhitespace
         _ ->
-          KDL.lift_v2 KDL.fail_v2 -< "Unknown lint rule: " <> name
+          KDL.lift KDL.fail -< "Unknown lint rule: " <> name
 
     maybeList xs = if null xs then Nothing else Just xs
 
@@ -133,12 +133,12 @@ data PassFilesMode
   | PassFiles_File
   deriving (Show, Eq)
 
-instance KDL.DecodeValue_v2 PassFilesMode where
-  valueDecoder_v2 = KDL.withDecoder_v2 KDL.valueDecoder_v2 $ \case
+instance KDL.DecodeValue PassFilesMode where
+  valueDecoder = KDL.withDecoder KDL.valueDecoder $ \case
     Nothing -> pure PassFiles_None
     Just "xargs" -> pure PassFiles_XArgs
     Just "file" -> pure PassFiles_File
-    Just s -> KDL.fail_v2 $ "Invalid pass_files value: " <> s
+    Just s -> KDL.fail $ "Invalid pass_files value: " <> s
 
 {----- Glob -----}
 
@@ -176,6 +176,6 @@ renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap 
       Left False -> "*"
       Right s -> Text.pack s
 
-instance KDL.DecodeValue_v2 Glob where
-  validTypeAnns_v2 _ = ["glob"]
-  valueDecoder_v2 = toGlob <$> KDL.text_v2
+instance KDL.DecodeValue Glob where
+  validTypeAnns _ = ["glob"]
+  valueDecoder = toGlob <$> KDL.text

@@ -38,43 +38,43 @@ module Data.KDL (
   getDashChildren,
 
   -- * Decode
-  fail_v2,
-  lift_v2,
-  withDecoder_v2,
-  decodeWith_v2,
-  decodeFileWith_v2,
-  count_v2,
-  atLeast_v2,
-  atMost_v2,
-  many_v2,
-  some_v2,
-  optional_v2,
-  setDefault_v2,
-  required_v2,
-  document_v2,
-  node_v2,
-  children_v2,
-  dashChildren_v2,
-  argAt_v2,
-  arg_v2,
-  value_v2,
-  any_v2,
-  text_v2,
-  number_v2,
-  bool_v2,
-  null_v2,
-  oneOf_v2,
-  DecodeValue_v2 (..),
+  fail,
+  lift,
+  withDecoder,
+  decodeWith,
+  decodeFileWith,
+  count,
+  atLeast,
+  atMost,
+  many,
+  some,
+  optional,
+  setDefault,
+  required,
+  document,
+  node,
+  children,
+  dashChildren,
+  argAt,
+  arg,
+  value,
+  any,
+  text,
+  number,
+  bool,
+  null,
+  oneOf,
+  DecodeValue (..),
   renderDecodeError,
-  DecodeM_v2,
-  DecodeError_v2,
-  DecodeArrow_v2,
-  Decoder_v2,
-  DocumentDecoder_v2,
-  NodesDecoder_v2,
-  NodeDecoder_v2,
-  ValueDecoder_v2,
-  BaseValueDecoder_v2,
+  DecodeM,
+  DecodeError,
+  DecodeArrow,
+  Decoder,
+  DocumentDecoder,
+  NodesDecoder,
+  NodeDecoder,
+  ValueDecoder,
+  BaseValueDecoder,
 
   -- * Low-level parse
   parse,
@@ -227,8 +227,8 @@ nodeChildren = (.obj.children)
 
 {----- Decode API -----}
 
-data DecodeM_v2 a = DecodeM_v2 (forall r. (Context -> BaseDecodeError -> r) -> (a -> r) -> r)
-data DecodeError_v2 = DecodeError_v2 Context BaseDecodeError
+data DecodeM a = DecodeM (forall r. (Context -> BaseDecodeError -> r) -> (a -> r) -> r)
+data DecodeError = DecodeError Context BaseDecodeError
   deriving (Show, Eq)
 data BaseDecodeError
   = DecodeError_Custom Text
@@ -244,39 +244,39 @@ data BaseDecodeError
   | DecodeError_UnusedArgs [AnnValue]
   deriving (Show, Eq)
 
-instance Functor DecodeM_v2 where
-  fmap f (DecodeM_v2 k) = DecodeM_v2 $ \onFail onSuccess -> k onFail (onSuccess . f)
-instance Applicative DecodeM_v2 where
-  pure x = DecodeM_v2 $ \_ onSuccess -> onSuccess x
-  DecodeM_v2 kf <*> DecodeM_v2 ka = DecodeM_v2 $ \onFail onSuccess ->
+instance Functor DecodeM where
+  fmap f (DecodeM k) = DecodeM $ \onFail onSuccess -> k onFail (onSuccess . f)
+instance Applicative DecodeM where
+  pure x = DecodeM $ \_ onSuccess -> onSuccess x
+  DecodeM kf <*> DecodeM ka = DecodeM $ \onFail onSuccess ->
     kf onFail $ \f -> ka onFail (onSuccess . f)
-instance Monad DecodeM_v2 where
-  DecodeM_v2 ka >>= k = DecodeM_v2 $ \onFail onSuccess ->
-    ka onFail $ \a -> let DecodeM_v2 kb = k a in kb onFail onSuccess
-instance Alternative DecodeM_v2 where
-  empty = fail_v2 "<empty>"
-  DecodeM_v2 k1 <|> DecodeM_v2 k2 = DecodeM_v2 $ \onFail onSuccess -> k1 (\_ _ -> k2 onFail onSuccess) onSuccess
+instance Monad DecodeM where
+  DecodeM ka >>= k = DecodeM $ \onFail onSuccess ->
+    ka onFail $ \a -> let DecodeM kb = k a in kb onFail onSuccess
+instance Alternative DecodeM where
+  empty = fail "<empty>"
+  DecodeM k1 <|> DecodeM k2 = DecodeM $ \onFail onSuccess -> k1 (\_ _ -> k2 onFail onSuccess) onSuccess
 
-decodeThrow :: BaseDecodeError -> DecodeM_v2 a
-decodeThrow e = DecodeM_v2 $ \onFail _ -> onFail [] e
+decodeThrow :: BaseDecodeError -> DecodeM a
+decodeThrow e = DecodeM $ \onFail _ -> onFail [] e
 
-fail_v2 :: Text -> DecodeM_v2 a
-fail_v2 = decodeThrow . DecodeError_Custom
+fail :: Text -> DecodeM a
+fail = decodeThrow . DecodeError_Custom
 
-runDecodeM :: DecodeM_v2 a -> Either DecodeError_v2 a
-runDecodeM (DecodeM_v2 f) = f (\ctx msg -> Left $ DecodeError_v2 ctx msg) Right
+runDecodeM :: DecodeM a -> Either DecodeError a
+runDecodeM (DecodeM f) = f (\ctx msg -> Left $ DecodeError ctx msg) Right
 
-renderDecodeError :: DecodeError_v2 -> Text
-renderDecodeError (DecodeError_v2 ctx e) = "At: " <> (Text.pack . show) ctx <> "\n" <> (Text.pack . show) e -- TODO: render pretty
+renderDecodeError :: DecodeError -> Text
+renderDecodeError (DecodeError ctx e) = "At: " <> (Text.pack . show) ctx <> "\n" <> (Text.pack . show) e -- TODO: render pretty
 
-data DecodeArrow_v2 s i a b = DecodeArrow_v2{schema :: s, run :: (i, a) -> DecodeM_v2 (i, b)}
-type Decoder_v2 a b = DecodeArrow_v2 (SchemaOf a) a () b
-type ValidatedDecoder_v2 a b = DecodeArrow_v2 (Validated (SchemaOf a)) a () b
-type DocumentDecoder_v2 a = ValidatedDecoder_v2 [AnnNode] a
-type NodesDecoder_v2 a = Decoder_v2 [AnnNode] a
-type NodeDecoder_v2 a = Decoder_v2 AnnNode a
-type ValueDecoder_v2 a = Decoder_v2 AnnValue a
-type BaseValueDecoder_v2 a = Decoder_v2 Value a
+data DecodeArrow s i a b = DecodeArrow{schema :: s, run :: (i, a) -> DecodeM (i, b)}
+type Decoder a b = DecodeArrow (SchemaOf a) a () b
+type ValidatedDecoder a b = DecodeArrow (Validated (SchemaOf a)) a () b
+type DocumentDecoder a = ValidatedDecoder [AnnNode] a
+type NodesDecoder a = Decoder [AnnNode] a
+type NodeDecoder a = Decoder AnnNode a
+type ValueDecoder a = Decoder AnnValue a
+type BaseValueDecoder a = Decoder Value a
 
 type family SchemaOf a where
   SchemaOf [AnnNode] = NodesSchema
@@ -285,39 +285,39 @@ type family SchemaOf a where
   SchemaOf Value = BaseValueSchema
   SchemaOf (Validated a) = Validated (SchemaOf a)
 
-instance Monoid s => Category.Category (DecodeArrow_v2 s i) where
-  id = lift_v2 pure
-  DecodeArrow_v2 s1 bc . DecodeArrow_v2 s2 ab = DecodeArrow_v2 (s1 <> s2) $ ab >=> bc
-instance Monoid s => Arrow (DecodeArrow_v2 s i) where
-  arr f = lift_v2 (pure . f)
-  DecodeArrow_v2 s1 bc *** DecodeArrow_v2 s2 bc' =
-    DecodeArrow_v2 (s1 <> s2) $ \(i0, (b, b')) -> do
+instance Monoid s => Category.Category (DecodeArrow s i) where
+  id = lift pure
+  DecodeArrow s1 bc . DecodeArrow s2 ab = DecodeArrow (s1 <> s2) $ ab >=> bc
+instance Monoid s => Arrow (DecodeArrow s i) where
+  arr f = lift (pure . f)
+  DecodeArrow s1 bc *** DecodeArrow s2 bc' =
+    DecodeArrow (s1 <> s2) $ \(i0, (b, b')) -> do
       (i1, c) <- bc (i0, b)
       (i2, c') <- bc' (i1, b')
       pure (i2, (c, c'))
-instance Monoid s => ArrowChoice (DecodeArrow_v2 s i) where
-  DecodeArrow_v2 s1 bc +++ DecodeArrow_v2 s2 bc' =
-    DecodeArrow_v2 (s1 <> s2) $ \case
+instance Monoid s => ArrowChoice (DecodeArrow s i) where
+  DecodeArrow s1 bc +++ DecodeArrow s2 bc' =
+    DecodeArrow (s1 <> s2) $ \case
       (i, Left b) -> (fmap . fmap) Left $ bc (i, b)
       (i, Right b') -> (fmap . fmap) Right $ bc' (i, b')
-instance Functor (DecodeArrow_v2 s i a) where
-  fmap f (DecodeArrow_v2 schema run) = DecodeArrow_v2 schema $ ((fmap . fmap) f . run)
-instance Monoid s => Applicative (DecodeArrow_v2 s i a) where
+instance Functor (DecodeArrow s i a) where
+  fmap f (DecodeArrow schema run) = DecodeArrow schema $ ((fmap . fmap) f . run)
+instance Monoid s => Applicative (DecodeArrow s i a) where
   pure = arr . const
-  DecodeArrow_v2 s1 kf <*> DecodeArrow_v2 s2 kx =
-    DecodeArrow_v2 (s1 <> s2) $ \(i0, a) -> do
+  DecodeArrow s1 kf <*> DecodeArrow s2 kx =
+    DecodeArrow (s1 <> s2) $ \(i0, a) -> do
       (i1, f) <- kf (i0, a)
       (i2, x) <- kx (i1, a)
       pure (i2, f x)
-instance Monoid s => Alternative (DecodeArrow_v2 s i a) where
-  empty = lift_v2 $ \_ -> empty
-  DecodeArrow_v2 s1 run1 <|> DecodeArrow_v2 s2 run2 = DecodeArrow_v2 (s1 <> s2) $ \x -> run1 x <|> run2 x
+instance Monoid s => Alternative (DecodeArrow s i a) where
+  empty = lift $ \_ -> empty
+  DecodeArrow s1 run1 <|> DecodeArrow s2 run2 = DecodeArrow (s1 <> s2) $ \x -> run1 x <|> run2 x
 
-lift_v2 :: Monoid s => (a -> DecodeM_v2 b) -> DecodeArrow_v2 s i a b
-lift_v2 run = DecodeArrow_v2 mempty $ \(i, a) -> (i,) <$> run a
+lift :: Monoid s => (a -> DecodeM b) -> DecodeArrow s i a b
+lift run = DecodeArrow mempty $ \(i, a) -> (i,) <$> run a
 
-withDecoder_v2 :: Monoid s => DecodeArrow_v2 s i a b -> (b -> DecodeM_v2 c) -> DecodeArrow_v2 s i a c
-withDecoder_v2 decoder f = decoder >>> lift_v2 f
+withDecoder :: Monoid s => DecodeArrow s i a b -> (b -> DecodeM c) -> DecodeArrow s i a c
+withDecoder decoder f = decoder >>> lift f
 
 type Context = [ContextItem]
 data ContextItem
@@ -327,8 +327,8 @@ data ContextItem
   | ContextProp Identifier
   deriving (Show, Eq)
 
-addContext :: ContextItem -> DecodeM_v2 a -> DecodeM_v2 a
-addContext ctxItem (DecodeM_v2 f) = DecodeM_v2 $ \onFail onSuccess -> f (onFail . (ctxItem :)) onSuccess
+addContext :: ContextItem -> DecodeM a -> DecodeM a
+addContext ctxItem (DecodeM f) = DecodeM $ \onFail onSuccess -> f (onFail . (ctxItem :)) onSuccess
 
 type NodesSchema = MapSchema Identifier (ListSchema (Validated NodeSchema))
 data NodeSchema = NodeSchema
@@ -389,31 +389,31 @@ data MaybeSchema a = MaybeSchema
   }
   deriving (Show, Eq)
 
-decodeWith_v2 :: DocumentDecoder_v2 a -> Text -> Either DecodeError_v2 a
-decodeWith_v2 decoder = decodeFromParseResult decoder . parse
+decodeWith :: DocumentDecoder a -> Text -> Either DecodeError a
+decodeWith decoder = decodeFromParseResult decoder . parse
 
-decodeFileWith_v2 :: DocumentDecoder_v2 a -> FilePath -> IO (Either DecodeError_v2 a)
-decodeFileWith_v2 decoder = fmap (decodeFromParseResult decoder) . parseFile
+decodeFileWith :: DocumentDecoder a -> FilePath -> IO (Either DecodeError a)
+decodeFileWith decoder = fmap (decodeFromParseResult decoder) . parseFile
 
-decodeFromParseResult :: DocumentDecoder_v2 a -> Either Text Document -> Either DecodeError_v2 a
+decodeFromParseResult :: DocumentDecoder a -> Either Text Document -> Either DecodeError a
 decodeFromParseResult decoder = runDecodeM . \case
   Left e -> decodeThrow $ DecodeError_ParseError e
-  Right doc -> runDecoder_v2 decoder doc
+  Right doc -> runDecoder decoder doc
 
-runDecoder_v2 :: DecodeArrow_v2 s a () b -> a -> DecodeM_v2 b
-runDecoder_v2 decoder a = snd <$> decoder.run (a, ())
+runDecoder :: DecodeArrow s a () b -> a -> DecodeM b
+runDecoder decoder a = snd <$> decoder.run (a, ())
 
 newtype Validated a = Validated {unwrap :: a}
   deriving (Show, Eq, Semigroup, Monoid)
 
-validateNodes :: Decoder_v2 [AnnNode] a -> ValidatedDecoder_v2 [AnnNode] a
+validateNodes :: Decoder [AnnNode] a -> ValidatedDecoder [AnnNode] a
 validateNodes decoder =
-  DecodeArrow_v2 (Validated decoder.schema) $ \(nodes, ()) -> do
+  DecodeArrow (Validated decoder.schema) $ \(nodes, ()) -> do
     (nodes', result) <- decoder.run (nodes, ())
     checkAllNodesDecoded decoder.schema nodes'
     pure (nodes', result)
 
-checkAllNodesDecoded :: NodesSchema -> [AnnNode] -> DecodeM_v2 ()
+checkAllNodesDecoded :: NodesSchema -> [AnnNode] -> DecodeM ()
 checkAllNodesDecoded schema nodes = do
   let expectedKeys = [k | MapItemSchema_ExpectKey k _ <- schema]
   case getDups expectedKeys of
@@ -434,14 +434,14 @@ checkAllNodesDecoded schema nodes = do
   where
     getDups xs = Map.keys $ Map.filter (> 1) $ Map.fromListWith (+) [(x, 1 :: Int) | x <- xs]
 
-validateNode :: Decoder_v2 AnnNode a -> ValidatedDecoder_v2 AnnNode a
+validateNode :: Decoder AnnNode a -> ValidatedDecoder AnnNode a
 validateNode decoder =
-  DecodeArrow_v2 (Validated decoder.schema) $ \(node, ()) -> do
+  DecodeArrow (Validated decoder.schema) $ \(node, ()) -> do
     (node', result) <- decoder.run (node, ())
     checkFullNodeDecoded decoder.schema node'
     pure (node', result)
 
-checkFullNodeDecoded :: NodeSchema -> AnnNode -> DecodeM_v2 ()
+checkFullNodeDecoded :: NodeSchema -> AnnNode -> DecodeM ()
 checkFullNodeDecoded schema node = do
   unless (null node.obj.args) $
     decodeThrow (DecodeError_UnusedArgs node.obj.args)
@@ -454,7 +454,7 @@ newtype WithCountSpec decoder = WithCountSpec{run :: CountSpec -> decoder}
 mkListSchema :: CountSpec -> s -> ListSchema s
 mkListSchema (min, max) itemSchema = ListSchema{..}
 
-splitCount :: CountSpec -> [a] -> DecodeM_v2 ([a], [a])
+splitCount :: CountSpec -> [a] -> DecodeM ([a], [a])
 splitCount (min, max) as = do
   let count = fromIntegral $ length as
   when (count < min) $
@@ -463,43 +463,43 @@ splitCount (min, max) as = do
     Just n -> pure (take n as, drop n as)
     Nothing -> pure (as, [])
 
-count_v2 :: CountSpec -> WithCountSpec decoder -> decoder
-count_v2 (min, max) k
+count :: CountSpec -> WithCountSpec decoder -> decoder
+count (min, max) k
   -- TODO: throw DecodeError
   | Just max' <- max, max' < min = error "max must be at least min"
   | otherwise = k.run (min, max)
 
-atLeast_v2 :: Natural -> WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a [b]
-atLeast_v2 n = count_v2 (n, Nothing)
+atLeast :: Natural -> WithCountSpec (Decoder a [b]) -> Decoder a [b]
+atLeast n = count (n, Nothing)
 
-atMost_v2 :: Natural -> WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a [b]
-atMost_v2 n = count_v2 (0, Just n)
+atMost :: Natural -> WithCountSpec (Decoder a [b]) -> Decoder a [b]
+atMost n = count (0, Just n)
 
-many_v2 :: WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a [b]
-many_v2 = atLeast_v2 0
+many :: WithCountSpec (Decoder a [b]) -> Decoder a [b]
+many = atLeast 0
 
-some_v2 :: WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a [b]
-some_v2 = atLeast_v2 1
+some :: WithCountSpec (Decoder a [b]) -> Decoder a [b]
+some = atLeast 1
 
-optional_v2 :: WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a (Maybe b)
-optional_v2 = fmap listToMaybe . count_v2 (0, Just 1)
+optional :: WithCountSpec (Decoder a [b]) -> Decoder a (Maybe b)
+optional = fmap listToMaybe . count (0, Just 1)
 
-setDefault_v2 :: b -> Decoder_v2 a (Maybe b) -> Decoder_v2 a b
-setDefault_v2 def = fmap (fromMaybe def)
+setDefault :: b -> Decoder a (Maybe b) -> Decoder a b
+setDefault def = fmap (fromMaybe def)
 
-required_v2 :: WithCountSpec (Decoder_v2 a [b]) -> Decoder_v2 a b
-required_v2 = fmap expectOne . count_v2 (1, Just 1)
+required :: WithCountSpec (Decoder a [b]) -> Decoder a b
+required = fmap expectOne . count (1, Just 1)
   where
     expectOne = \case
       [x] -> x
-      _ -> error "required_v2: unexpected result from count_v2"
+      _ -> error "required: unexpected result from count"
 
-document_v2 :: NodesDecoder_v2 a -> DocumentDecoder_v2 a
-document_v2 = validateNodes
+document :: NodesDecoder a -> DocumentDecoder a
+document = validateNodes
 
-node_v2 :: Identifier -> NodeDecoder_v2 a -> WithCountSpec (NodesDecoder_v2 [a])
-node_v2 name decoder0 = WithCountSpec $ \countSpec ->
-  DecodeArrow_v2
+node :: Identifier -> NodeDecoder a -> WithCountSpec (NodesDecoder [a])
+node name decoder0 = WithCountSpec $ \countSpec ->
+  DecodeArrow
     [MapItemSchema_ExpectKey name $ mkListSchema countSpec decoder.schema]
     (run countSpec)
   where
@@ -509,58 +509,58 @@ node_v2 name decoder0 = WithCountSpec $ \countSpec ->
       (nodes, leftoverNodes) <- splitCount countSpec candidateNodes
       results <-
         forM (zip nodes [0..]) $ \(node, i) ->
-          addContext (ContextIndex i) $ runDecoder_v2 decoder node
+          addContext (ContextIndex i) $ runDecoder decoder node
       pure (leftoverNodes <> remainingNodes, results)
 
--- TODO: remainingNodes_v2 :: NodeDecoder_v2 a -> NodesDecoder_v2 [a]
+-- TODO: remainingNodes :: NodeDecoder a -> NodesDecoder [a]
 
-children_v2 :: NodesDecoder_v2 a -> NodeDecoder_v2 a
-children_v2 decoder =
-  DecodeArrow_v2 mempty{childSchemas = decoder.schema} $ \(node, ()) -> do
+children :: NodesDecoder a -> NodeDecoder a
+children decoder =
+  DecodeArrow mempty{childSchemas = decoder.schema} $ \(node, ()) -> do
     (_, result) <- decoder.run (node.obj.children, ())
     pure (node{obj = node.obj{children = []}}, result)
 
-dashChildren_v2 :: Identifier -> NodeDecoder_v2 a -> NodesDecoder_v2 [a]
-dashChildren_v2 name decoder =
-  setDefault_v2 [] . optional_v2 . node_v2 name $
-    children_v2 . many_v2 . node_v2 "-" $
+dashChildren :: Identifier -> NodeDecoder a -> NodesDecoder [a]
+dashChildren name decoder =
+  setDefault [] . optional . node name $
+    children . many . node "-" $
       decoder
 
-argAt_v2 :: DecodeValue_v2 a => Identifier -> WithCountSpec (NodesDecoder_v2 [a])
-argAt_v2 name = WithCountSpec $ \countSpec ->
-  setDefault_v2 [] $ optional_v2 $ node_v2 name $ arg_v2.run countSpec
+argAt :: DecodeValue a => Identifier -> WithCountSpec (NodesDecoder [a])
+argAt name = WithCountSpec $ \countSpec ->
+  setDefault [] $ optional $ node name $ arg.run countSpec
 
-arg_v2 :: DecodeValue_v2 a => WithCountSpec (NodeDecoder_v2 [a])
-arg_v2 = WithCountSpec $ \countSpec ->
-  DecodeArrow_v2
+arg :: DecodeValue a => WithCountSpec (NodeDecoder [a])
+arg = WithCountSpec $ \countSpec ->
+  DecodeArrow
     mempty{argSchemas = [mkListSchema countSpec decoder.schema]}
     (run countSpec)
   where
-    decoder = value_v2
+    decoder = value
     run countSpec (node, ()) = addContext ContextArgs $ do
       (args, remainingArgs) <- splitCount countSpec node.obj.args
       results <-
         forM (zip args [0..]) $ \(arg, i) ->
-          addContext (ContextIndex i) $ runDecoder_v2 decoder arg
+          addContext (ContextIndex i) $ runDecoder decoder arg
       pure (node{obj = node.obj{args = remainingArgs}}, results)
 
--- TODO: remainingArgs_v2 :: DecodeValue_v2 a => NodeDecoder_v2 [a]
+-- TODO: remainingArgs :: DecodeValue a => NodeDecoder [a]
 
--- TODO: prop_v2 :: DecodeValue_v2 a => Identifier -> NodeDecoder_v2 a
--- TODO: remainingProps_v2 :: DecodeValue_v2 a => NodeDecoder_v2 (Map Identifier a)
+-- TODO: prop :: DecodeValue a => Identifier -> NodeDecoder a
+-- TODO: remainingProps :: DecodeValue a => NodeDecoder (Map Identifier a)
 
-value_v2 :: forall a. DecodeValue_v2 a => ValueDecoder_v2 a
-value_v2 = DecodeArrow_v2 schema $ \(annValue, ()) ->
+value :: forall a. DecodeValue a => ValueDecoder a
+value = DecodeArrow schema $ \(annValue, ()) ->
   case annValue of
     Ann{ann = Just givenAnn} | Just validAnns <- mValidAnns, givenAnn `notElem` validAnns ->
       decodeThrow DecodeError_MismatchedAnn{givenAnn = givenAnn, validAnns = validAnns}
     Ann{obj = value} ->
       (<|> decodeThrow DecodeError_AnnValueDecodeFail{typeHint = typeHint, annValue = annValue}) $ do
-        (annValue,) <$> runDecoder_v2 decoder value
+        (annValue,) <$> runDecoder decoder value
   where
-    decoder@(DecodeArrow_v2 validSchemas _) = valueDecoder_v2 @a
+    decoder@(DecodeArrow validSchemas _) = valueDecoder @a
     typeHint = typeRep (Proxy @a)
-    mValidAnns = maybeList $ validTypeAnns_v2 (Proxy @a)
+    mValidAnns = maybeList $ validTypeAnns (Proxy @a)
     schema =
       ValueSchema
         { typeHint = Just typeHint
@@ -569,64 +569,64 @@ value_v2 = DecodeArrow_v2 schema $ \(annValue, ()) ->
         }
     maybeList xs = if null xs then Nothing else Just xs
 
-baseValueDecoder_v2 :: [ValueTypeSchema] -> (Value -> DecodeM_v2 a) -> BaseValueDecoder_v2 a
-baseValueDecoder_v2 tys f = DecodeArrow_v2 (Set.fromList tys) $ \(value, ()) -> (value,) <$> f value
+baseValueDecoder :: [ValueTypeSchema] -> (Value -> DecodeM a) -> BaseValueDecoder a
+baseValueDecoder tys f = DecodeArrow (Set.fromList tys) $ \(value, ()) -> (value,) <$> f value
 
-any_v2 :: BaseValueDecoder_v2 Value
-any_v2 = baseValueDecoder_v2 [minBound .. maxBound] pure
+any :: BaseValueDecoder Value
+any = baseValueDecoder [minBound .. maxBound] pure
 
-text_v2 :: BaseValueDecoder_v2 Text
-text_v2 = baseValueDecoder_v2 [TextSchema] $ \case
+text :: BaseValueDecoder Text
+text = baseValueDecoder [TextSchema] $ \case
   Text s -> pure s
   v -> decodeThrow DecodeError_ValueDecodeFail{expectedType = "text", value = v}
 
-number_v2 :: BaseValueDecoder_v2 Scientific
-number_v2 = baseValueDecoder_v2 [NumberSchema] $ \case
+number :: BaseValueDecoder Scientific
+number = baseValueDecoder [NumberSchema] $ \case
   Number x -> pure x
   v -> decodeThrow DecodeError_ValueDecodeFail{expectedType = "number", value = v}
 
-bool_v2 :: BaseValueDecoder_v2 Bool
-bool_v2 = baseValueDecoder_v2 [BoolSchema] $ \case
+bool :: BaseValueDecoder Bool
+bool = baseValueDecoder [BoolSchema] $ \case
   Bool x -> pure x
   v -> decodeThrow DecodeError_ValueDecodeFail{expectedType = "bool", value = v}
 
-null_v2 :: BaseValueDecoder_v2 ()
-null_v2 = baseValueDecoder_v2 [NullSchema] $ \case
+null :: BaseValueDecoder ()
+null = baseValueDecoder [NullSchema] $ \case
   Null -> pure ()
   v -> decodeThrow DecodeError_ValueDecodeFail{expectedType = "null", value = v}
 
-oneOf_v2 :: [BaseValueDecoder_v2 a] -> BaseValueDecoder_v2 a
-oneOf_v2 = \case
+oneOf :: [BaseValueDecoder a] -> BaseValueDecoder a
+oneOf = \case
   [] -> empty
-  d : ds -> d <|> oneOf_v2 ds
+  d : ds -> d <|> oneOf ds
 
-class Typeable a => DecodeValue_v2 a where
-  validTypeAnns_v2 :: Proxy a -> [Identifier]
-  validTypeAnns_v2 _ = []
-  valueDecoder_v2 :: BaseValueDecoder_v2 a
-instance DecodeValue_v2 Value where
-  valueDecoder_v2 = any_v2
-instance DecodeValue_v2 Text where
-  validTypeAnns_v2 _ = ["string", "text"]
-  valueDecoder_v2 = text_v2
+class Typeable a => DecodeValue a where
+  validTypeAnns :: Proxy a -> [Identifier]
+  validTypeAnns _ = []
+  valueDecoder :: BaseValueDecoder a
+instance DecodeValue Value where
+  valueDecoder = any
+instance DecodeValue Text where
+  validTypeAnns _ = ["string", "text"]
+  valueDecoder = text
 -- TODO: Add Word8, Int8, ...
-instance DecodeValue_v2 Integer where
-  validTypeAnns_v2 _ = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize"]
-  valueDecoder_v2 = toInteger <$> valueDecoder_v2 @Int64
-instance DecodeValue_v2 Int64 where
-  validTypeAnns_v2 _ = ["i64"]
-  valueDecoder_v2 = withDecoder_v2 number_v2 $ \x -> do
+instance DecodeValue Integer where
+  validTypeAnns _ = ["i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "isize", "usize"]
+  valueDecoder = toInteger <$> valueDecoder @Int64
+instance DecodeValue Int64 where
+  validTypeAnns _ = ["i64"]
+  valueDecoder = withDecoder number $ \x -> do
     unless (Scientific.isInteger x) $
-      fail_v2 $ "Expected integer, got: " <> (Text.pack . show) x
-    maybe (fail_v2 $ "Number is too large: " <> (Text.pack . show) x) pure $
+      fail $ "Expected integer, got: " <> (Text.pack . show) x
+    maybe (fail $ "Number is too large: " <> (Text.pack . show) x) pure $
       Scientific.toBoundedInteger @Int64 x
 -- TODO: Add Double, Float, Rational
-instance DecodeValue_v2 Scientific where
-  validTypeAnns_v2 _ = ["f32", "f64", "decimal64", "decimal128"]
-  valueDecoder_v2 = number_v2
-instance DecodeValue_v2 Bool where
-  validTypeAnns_v2 _ = ["bool", "boolean"]
-  valueDecoder_v2 = bool_v2
-instance DecodeValue_v2 a => DecodeValue_v2 (Maybe a) where
-  validTypeAnns_v2 _ = validTypeAnns_v2 (Proxy @a)
-  valueDecoder_v2 = oneOf_v2 [Nothing <$ null_v2, Just <$> valueDecoder_v2]
+instance DecodeValue Scientific where
+  validTypeAnns _ = ["f32", "f64", "decimal64", "decimal128"]
+  valueDecoder = number
+instance DecodeValue Bool where
+  validTypeAnns _ = ["bool", "boolean"]
+  valueDecoder = bool
+instance DecodeValue a => DecodeValue (Maybe a) where
+  validTypeAnns _ = validTypeAnns (Proxy @a)
+  valueDecoder = oneOf [Nothing <$ null, Just <$> valueDecoder]
