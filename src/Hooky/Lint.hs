@@ -158,17 +158,22 @@ lint_CheckBrokenSymlinks = LintActionPerFile . notFixable $ \_ file -> do
       then LintFailed "File is a broken symlink. Remove or exclude from rule"
       else LintSuccess
 
+-- FIXME
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionPerFile . notFixable $ \_ _ -> pure LintSuccess
 
+-- FIXME
 lint_CheckMergeConflict :: LintAction
 lint_CheckMergeConflict = LintActionPerFile . notFixable $ \_ _ -> pure LintSuccess
 
+-- FIXME
 lint_EndOfFileFixer :: LintAction
 lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> pure (LintSuccess, contents)
 
+-- FIXME
 lint_NoCommitToBranch :: [Glob] -> LintAction
 lint_NoCommitToBranch _ = LintActionNoFile $ \_ -> pure LintSuccess
 
+-- FIXME
 lint_TrailingWhitespace :: LintAction
 lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> pure (LintSuccess, contents)
