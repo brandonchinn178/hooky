@@ -86,7 +86,7 @@ Available rules and rule-specific configuration:
 
 ### pre-commit
 
-[`pre-commit`](https://pre-commit.com) is primarily a tool/environment manager ([ref](https://github.com/pre-commit/pre-commit/issues/2316#issuecomment-1083643390)), not a command runner. IMO this is the wrong direction; most of the time, you've already configured the linter in your own environment; e.g. `eslint` in `package.json` or `ruff` in `pyproject.toml`. With `pre-commit`, you have to re-configure the linter in `.pre-commit-config.yaml`.
+[`pre-commit`](https://pre-commit.com) is primarily a tool/environment manager ([ref](https://github.com/pre-commit/pre-commit/pull/3577), [ref2](https://github.com/pre-commit/pre-commit/issues/2316#issuecomment-1083643390)), not a command runner. IMO this is the wrong direction; most of the time, you've already configured the linter in your own environment; e.g. `eslint` in `package.json` or `ruff` in `pyproject.toml`. With `pre-commit`, you have to re-configure the linter in `.pre-commit-config.yaml`.
 
 At the end of the day, git pre-commit hooks should just be a matter of registering commands you can already run in your repo with git hooks. That is the only thing Hooky cares about, and how you want to manage your tools is up to you.
 
