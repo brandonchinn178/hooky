@@ -1,6 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -25,7 +26,7 @@ import System.Process (readProcessWithExitCode)
 
 data CLIOptions = CLIOptions
   { command :: CLICommand
-  , configFilePath :: Maybe FilePath
+  , configFile :: Maybe FilePath
   }
 
 data CLICommand
@@ -53,7 +54,7 @@ cliOptions =
           , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
           ]
 
-      configFilePath <-
+      configFile <-
         Opt.optional . Opt.strOption . mconcat $
           [ Opt.long "config"
           , Opt.short 'c'
@@ -87,14 +88,14 @@ cliOptions =
 
 main :: IO ()
 main = do
-  CLIOptions{..} <- Opt.execParser cliOptions
+  cli <- Opt.execParser cliOptions
 
   repo <- readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] "" >>= \case
     (ExitFailure _, _, _) -> abort "hooky: not currently in a git repository"
     (ExitSuccess, stdout, _) -> pure $ (Text.unpack . Text.strip . Text.pack) stdout
 
   configFile <-
-    case configFilePath of
+    case cli.configFile of
       Nothing -> pure $ repo </> ".hooky.kdl"
       Just fp -> makeAbsolute fp
 
@@ -104,7 +105,7 @@ main = do
 
   config <- either (abort . Text.unpack) pure . parseConfig =<< Text.readFile configFile
 
-  case command of
+  case cli.command of
     CommandInstall -> do
       -- exe <- getExecutablePath >>= parseAbsFile
       -- let args = ["--config", Text.pack (toFilePath configFile)]
@@ -121,14 +122,14 @@ main = do
       error "TODO: run"
     CommandFix -> do
       error "TODO: fix"
-    CommandLint{..} ->
+    command@CommandLint{} ->
       cmdLint
         LintRunConfig
           { repo = repo
-          , autofix = autofix
-          , rules = let Config{lintRules} = config in lintRules
+          , autofix = command.autofix
+          , rules = config.lintRules
           }
-        files
+        command.files
 
 cmdLint :: LintRunConfig -> [FilePath] -> IO ()
 cmdLint lintConfig files0 = do

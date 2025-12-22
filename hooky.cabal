@@ -24,13 +24,11 @@ library
   exposed-modules:
     Hooky.Config
     Hooky.Lint
-  other-modules:
-    Data.KDL
   build-depends:
       base < 5
     , containers
     , directory
-    , hustle
+    , kdl-hs
     , scientific
     , text
   default-language: GHC2021

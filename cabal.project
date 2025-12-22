@@ -7,5 +7,5 @@ program-options
 
 source-repository-package
   type: git
-  location: https://github.com/brandonchinn178/hustle
-  tag: bf7d9b7ba13362bf3bd5f112436766bcce0c7473
+  location: https://github.com/brandonchinn178/kdl-hs
+  tag: ac3e0e78684a88464897bde04c235cf759c95e14

@@ -1,9 +1,10 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Config (
   Config (..),
@@ -18,11 +19,12 @@ module Hooky.Config (
 
 import Control.Arrow (returnA)
 import Data.Bifunctor qualified as Bifunctor
-import Data.KDL qualified as KDL
+import Data.KDL.Decoder.Arrow qualified as KDL
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
+import qualified Data.KDL.Decoder.DecodeM as KDL
 
 data Config = Config
   { files :: [Glob]
@@ -32,14 +34,15 @@ data Config = Config
   deriving (Show, Eq)
 
 parseConfig :: Text -> Either Text Config
-parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith configDecoder
+parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
+ where
+  decoder = KDL.document $ proc () -> do
+    files <- KDL.argsAt "files" -< ()
+    hooks <- fmap toHookMap $ KDL.many $ KDL.node "hook" -< ()
+    lintRules <- KDL.dashNodesAt "lint_rules" -< ()
+    returnA -< Config{..}
 
-configDecoder :: KDL.DocumentDecoder Config
-configDecoder = KDL.document $ proc () -> do
-  files <- KDL.many $ KDL.argAt "files" -< ()
-  hooks <- fmap Map.fromList $ KDL.many $ KDL.node "hook" hookDecoder -< ()
-  lintRules <- KDL.dashChildren "lint_rules" lintRuleDecoder -< ()
-  returnA -< Config{..}
+  toHookMap = Map.fromList . map (\config -> (config.name, config))
 
 data HookConfig = HookConfig
   { name :: Text
@@ -51,19 +54,19 @@ data HookConfig = HookConfig
   }
   deriving (Show, Eq)
 
-hookDecoder :: KDL.NodeDecoder (Text, HookConfig)
-hookDecoder = proc () -> do
-  name <- KDL.required KDL.arg -< ()
-  (cmdArgs, checkArgs, fixArgs, passFiles) <- KDL.children $ KDL.required $ KDL.node "command" commandDecoder -< ()
-  files <- KDL.children $ KDL.some $ KDL.argAt "files" -< ()
-  returnA -< (name, HookConfig{..})
-  where
+instance KDL.DecodeBaseNode HookConfig where
+  baseNodeDecoder = proc () -> do
+    name <- KDL.arg -< ()
+    finalize <- KDL.children $ KDL.nodeWith "command" [] $ commandDecoder -< ()
+    files <- KDL.children $ KDL.nodeWith "files" [] $ KDL.some KDL.arg -< ()
+    returnA -< finalize name files
+   where
     commandDecoder = proc () -> do
-      cmdArgs <- KDL.some $ KDL.arg -< ()
-      checkArgs <- KDL.children $ KDL.many $ KDL.argAt "check_arg" -< ()
-      fixArgs <- KDL.children $ KDL.many $ KDL.argAt "fix_arg" -< ()
-      passFiles <- KDL.children $ KDL.setDefault PassFiles_XArgs $ KDL.optional $ KDL.argAt "pass_files" -< ()
-      returnA -< (cmdArgs, checkArgs, fixArgs, passFiles)
+      cmdArgs <- KDL.some KDL.arg -< ()
+      checkArgs <- KDL.children $ KDL.argsAt "check_arg" -< ()
+      fixArgs <- KDL.children $ KDL.argsAt "fix_arg" -< ()
+      passFiles <- KDL.children $ KDL.option PassFiles_XArgs $ KDL.argAt "pass_files" -< ()
+      returnA -< (\name files -> HookConfig{..})
 
 {----- LintRule -----}
 
@@ -93,14 +96,14 @@ lintRuleName LintRule{rule} =
     LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
     LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
-lintRuleDecoder :: KDL.NodeDecoder LintRule
-lintRuleDecoder = proc () -> do
-  rule <- ruleDecoder -< ()
-  files <- KDL.children $ KDL.many $ KDL.argAt "files" -< ()
-  returnA -< LintRule{..}
-  where
-    ruleDecoder = proc () -> do
-      name <- KDL.required $ KDL.arg -< ()
+instance KDL.DecodeBaseNode LintRule where
+  baseNodeDecoder = proc () -> do
+    name <- KDL.arg -< ()
+    rule <- ruleDecoder -< name
+    files <- KDL.children $ KDL.argsAt "files" -< ()
+    returnA -< LintRule{..}
+   where
+    ruleDecoder = proc name -> do
       case name of
         "check_broken_symlinks" ->
           returnA -< LintRule_CheckBrokenSymlinks
@@ -111,19 +114,13 @@ lintRuleDecoder = proc () -> do
         "end_of_file_fixer" ->
           returnA -< LintRule_EndOfFileFixer
         "no_commit_to_branch" -> do
-          branches <-
-            KDL.children $
-              KDL.setDefault (map toGlob ["main", "master"]) . fmap maybeList $
-                KDL.dashChildren "branches" $
-                  KDL.required KDL.arg
-            -< ()
+          branchesRaw <- KDL.children $ KDL.dashChildrenAt "branches" -< ()
+          let branches = if null branchesRaw then map toGlob ["main", "master"] else branchesRaw
           returnA -< LintRule_NoCommitToBranch branches
         "trailing_whitespace" ->
           returnA -< LintRule_TrailingWhitespace
         _ ->
-          KDL.lift KDL.fail -< "Unknown lint rule: " <> name
-
-    maybeList xs = if null xs then Nothing else Just xs
+          KDL.fail -< "Unknown lint rule: " <> name
 
 {----- PassFilesMode -----}
 
@@ -133,17 +130,18 @@ data PassFilesMode
   | PassFiles_File
   deriving (Show, Eq)
 
-instance KDL.DecodeValue PassFilesMode where
-  valueDecoder = KDL.withDecoder KDL.valueDecoder $ \case
+instance KDL.DecodeBaseValue PassFilesMode where
+  baseValueDecoder = KDL.withDecoder KDL.baseValueDecoder $ \case
     Nothing -> pure PassFiles_None
     Just "xargs" -> pure PassFiles_XArgs
     Just "file" -> pure PassFiles_File
-    Just s -> KDL.fail $ "Invalid pass_files value: " <> s
+    Just s -> KDL.failM $ "Invalid pass_files value: " <> s
 
 {----- Glob -----}
 
--- | TODO: make proper data type
--- (isNegate, [Left isStarStar, Right lit])
+{- | TODO: make proper data type
+(isNegate, [Left isStarStar, Right lit])
+-}
 newtype Glob = Glob (Bool, [Either Bool String])
   deriving (Eq)
 
@@ -152,30 +150,30 @@ instance Show Glob where
 
 toGlob :: Text -> Glob
 toGlob = Glob . parse0 . Text.unpack
-  where
-    parse0 = \case
-      '!' : cs -> (True, parse1 cs)
-      cs -> (False, parse1 cs)
+ where
+  parse0 = \case
+    '!' : cs -> (True, parse1 cs)
+    cs -> (False, parse1 cs)
 
-    parse1 = \case
-      '/' : cs -> Left True : parse2 cs
-      cs -> parse2 cs
+  parse1 = \case
+    '/' : cs -> Left True : parse2 cs
+    cs -> parse2 cs
 
-    parse2 = \case
-      '*' : '*' : cs -> Left True : parse2 cs
-      '*' : cs -> Left False : parse2 cs
-      -- TODO: collapse all consecutive Rights
-      c : cs -> Right [c] : parse2 cs
-      [] -> []
+  parse2 = \case
+    '*' : '*' : cs -> Left True : parse2 cs
+    '*' : cs -> Left False : parse2 cs
+    -- TODO: collapse all consecutive Rights
+    c : cs -> Right [c] : parse2 cs
+    [] -> []
 
 renderGlob :: Glob -> Text
 renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap go parts
-  where
-    go = \case
-      Left True -> "**"
-      Left False -> "*"
-      Right s -> Text.pack s
+ where
+  go = \case
+    Left True -> "**"
+    Left False -> "*"
+    Right s -> Text.pack s
 
-instance KDL.DecodeValue Glob where
-  validTypeAnns _ = ["glob"]
-  valueDecoder = toGlob <$> KDL.text
+instance KDL.DecodeBaseValue Glob where
+  baseValueTypeAnns _ = ["glob"]
+  baseValueDecoder = toGlob <$> KDL.text

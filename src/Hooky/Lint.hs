@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -39,8 +40,8 @@ data LintRunConfig = LintRunConfig
   }
 
 runLintRules :: LintRunConfig -> [FilePath] -> IO LintReport
-runLintRules config@LintRunConfig{..} files = do
-  let linters = map (\rule -> (rule, fromLintRule rule)) rules
+runLintRules config files = do
+  let linters = map (\rule -> (rule, fromLintRule rule)) config.rules
   let (nonFileLinters, fileLinters) =
         partitionEithers
           [ case action of
@@ -63,11 +64,11 @@ runLintRules config@LintRunConfig{..} files = do
           ( \contents (rule, run) -> do
               -- TODO: check if file is valid for rule
               (result, contents') <- run config file contents
-              pure ((lintRuleName rule, result), if autofix then contents' else contents)
+              pure ((lintRuleName rule, result), if config.autofix then contents' else contents)
           )
           contents1
           fileLinters
-      when (autofix && contents2 /= contents1) $ Text.writeFile file contents2
+      when (config.autofix && contents2 /= contents1) $ Text.writeFile file contents2
       pure (Just file, results)
 
   pure . LintReport . Map.fromList $ nonFileLinterResults : fileLinterResults
@@ -86,10 +87,10 @@ runLintRules config@LintRunConfig{..} files = do
       pure (reverse acc, s')
 
 -- | Map from filepath to the hooks and their results.
-newtype LintReport = LintReport (Map (Maybe FilePath) [(Text, LintResult)])
+newtype LintReport = LintReport {unwrap :: Map (Maybe FilePath) [(Text, LintResult)]}
 
 renderLintReport :: LintReport -> Text
-renderLintReport report@(LintReport allResults) = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
+renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
   where
     failureMsgs =
       [ Text.intercalate "\n" $
@@ -103,7 +104,7 @@ renderLintReport report@(LintReport allResults) = Text.intercalate "\n\n" $ fail
                     LintFixed -> Just "FIXED"
                     LintFailed msg -> Just msg
             ]
-      | (mFile, results) <- Map.toAscList allResults
+      | (mFile, results) <- Map.toAscList report.unwrap
       , any ((/= LintSuccess) . snd) results
       ]
 
@@ -114,7 +115,7 @@ renderLintReport report@(LintReport allResults) = Text.intercalate "\n\n" $ fail
         else [Text.intercalate "\n" $ "Hooks passed:" : map ("- " <>) successfulHooks]
 
 getSuccessfulHooks :: LintReport -> [Text]
-getSuccessfulHooks (LintReport report) =
+getSuccessfulHooks =
   -- Map (Maybe FilePath) [(Text, LintResult)]
   --   => [(Text, LintResult)]
   --   => [(Text, isSuccess)]
@@ -124,7 +125,7 @@ getSuccessfulHooks (LintReport report) =
     . Map.fromListWith (<>)
     . map (fmap (Monoid.All . (== LintSuccess)))
     . (concat . Map.elems)
-    $ report
+    . (.unwrap)
 
 data LintAction
   = LintActionNoFile (LintRunConfig -> IO LintResult)
