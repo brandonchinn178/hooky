@@ -63,8 +63,8 @@ instance KDL.DecodeBaseNode HookConfig where
    where
     commandDecoder = proc () -> do
       cmdArgs <- KDL.some KDL.arg -< ()
-      checkArgs <- KDL.children $ KDL.argsAt "check_arg" -< ()
-      fixArgs <- KDL.children $ KDL.argsAt "fix_arg" -< ()
+      checkArgs <- KDL.children $ KDL.argsAt "check_args" -< ()
+      fixArgs <- KDL.children $ KDL.argsAt "fix_args" -< ()
       passFiles <- KDL.children $ KDL.option PassFiles_XArgs $ KDL.argAt "pass_files" -< ()
       returnA -< (\name files -> HookConfig{..})
 
@@ -127,6 +127,7 @@ instance KDL.DecodeBaseNode LintRule where
 data PassFilesMode
   = PassFiles_None
   | PassFiles_XArgs
+  | PassFiles_XArgsParallel
   | PassFiles_File
   deriving (Show, Eq)
 
@@ -134,6 +135,7 @@ instance KDL.DecodeBaseValue PassFilesMode where
   baseValueDecoder = KDL.withDecoder KDL.baseValueDecoder $ \case
     Nothing -> pure PassFiles_None
     Just "xargs" -> pure PassFiles_XArgs
+    Just "xargs_parallel" -> pure PassFiles_XArgsParallel
     Just "file" -> pure PassFiles_File
     Just s -> KDL.failM $ "Invalid pass_files value: " <> s
 
