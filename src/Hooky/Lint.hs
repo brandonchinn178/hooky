@@ -64,11 +64,17 @@ runLintRules config files = do
           ( \contents (rule, run) -> do
               -- TODO: check if file is valid for rule
               (result, contents') <- run config file contents
-              pure ((lintRuleName rule, result), if config.autofix then contents' else contents)
+              let name = lintRuleName rule
+              pure $
+                if config.autofix
+                  then ((name, result), contents')
+                  -- TODO: show diff of fix failure
+                  else ((name, if result == LintFixed then LintFailed "file would be changed" else result), contents)
           )
           contents1
           fileLinters
-      when (config.autofix && contents2 /= contents1) $ Text.writeFile file contents2
+      when (any ((== LintFixed) . snd) results) $ do
+        Text.writeFile file contents2
       pure (Just file, results)
 
   pure . LintReport . Map.fromList $ nonFileLinterResults : fileLinterResults
@@ -159,22 +165,32 @@ lint_CheckBrokenSymlinks = LintActionPerFile . notFixable $ \_ file -> do
       then LintFailed "File is a broken symlink. Remove or exclude from rule"
       else LintSuccess
 
--- FIXME
 lint_CheckCaseConflict :: LintAction
-lint_CheckCaseConflict = LintActionPerFile . notFixable $ \_ _ -> pure LintSuccess
+lint_CheckCaseConflict = LintActionPerFile . notFixable $ \_ _ -> do
+  -- FIXME
+  pure LintSuccess
 
--- FIXME
 lint_CheckMergeConflict :: LintAction
-lint_CheckMergeConflict = LintActionPerFile . notFixable $ \_ _ -> pure LintSuccess
+lint_CheckMergeConflict = LintActionPerFile . notFixable $ \_ _ -> do
+  -- FIXME
+  pure LintSuccess
 
--- FIXME
 lint_EndOfFileFixer :: LintAction
-lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> pure (LintSuccess, contents)
+lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
+  case spanEnd (== '\n') contents of
+    (_, suf) | Text.compareLength suf 1 == EQ -> pure (LintSuccess, contents)
+    (stripped, _) -> pure (LintFixed, stripped <> "\n")
+ where
+  spanEnd p s =
+    let suf = Text.takeWhileEnd p s
+     in (Text.dropEnd (Text.length suf) s, suf)
 
--- FIXME
 lint_NoCommitToBranch :: [Glob] -> LintAction
-lint_NoCommitToBranch _ = LintActionNoFile $ \_ -> pure LintSuccess
+lint_NoCommitToBranch _ = LintActionNoFile $ \_ -> do
+  -- FIXME
+  pure LintSuccess
 
--- FIXME
 lint_TrailingWhitespace :: LintAction
-lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> pure (LintSuccess, contents)
+lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> do
+  -- FIXME
+  pure (LintSuccess, contents)
