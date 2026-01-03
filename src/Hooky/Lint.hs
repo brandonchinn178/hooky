@@ -1,9 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Lint (
   LintRunConfig (..),
@@ -72,30 +72,30 @@ runLintRules config files = do
       pure (Just file, results)
 
   pure . LintReport . Map.fromList $ nonFileLinterResults : fileLinterResults
-  where
-    -- mapM that also threads state through the loop
-    mapAndFoldM :: Monad m => (s -> a -> m (b, s)) -> s -> [a] -> m ([b], s)
-    mapAndFoldM f s0 as = do
-      (acc, s') <-
-        foldlM
-          ( \(acc, s) a -> do
-              (b, s') <- f s a
-              pure (b : acc, s')
-          )
-          ([], s0)
-          as
-      pure (reverse acc, s')
+ where
+  -- mapM that also threads state through the loop
+  mapAndFoldM :: (Monad m) => (s -> a -> m (b, s)) -> s -> [a] -> m ([b], s)
+  mapAndFoldM f s0 as = do
+    (acc, s') <-
+      foldlM
+        ( \(acc, s) a -> do
+            (b, s') <- f s a
+            pure (b : acc, s')
+        )
+        ([], s0)
+        as
+    pure (reverse acc, s')
 
 -- | Map from filepath to the hooks and their results.
 newtype LintReport = LintReport {unwrap :: Map (Maybe FilePath) [(Text, LintResult)]}
 
 renderLintReport :: LintReport -> Text
 renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
-  where
-    failureMsgs =
-      [ Text.intercalate "\n" $
-          (maybe "<no file>" Text.pack mFile <> ":") :
-            [ "- [" <> hook <> "] " <> msg
+ where
+  failureMsgs =
+    [ Text.intercalate "\n" $
+        (maybe "<no file>" Text.pack mFile <> ":")
+          : [ "- [" <> hook <> "] " <> msg
             | (hook, result) <- results
             , Just msg <-
                 pure $
@@ -104,15 +104,15 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
                     LintFixed -> Just "FIXED"
                     LintFailed msg -> Just msg
             ]
-      | (mFile, results) <- Map.toAscList report.unwrap
-      , any ((/= LintSuccess) . snd) results
-      ]
+    | (mFile, results) <- Map.toAscList report.unwrap
+    , any ((/= LintSuccess) . snd) results
+    ]
 
-    successfulHooks = getSuccessfulHooks report
-    successMsgs =
-      if null successfulHooks
-        then []
-        else [Text.intercalate "\n" $ "Hooks passed:" : map ("- " <>) successfulHooks]
+  successfulHooks = getSuccessfulHooks report
+  successMsgs =
+    if null successfulHooks
+      then []
+      else [Text.intercalate "\n" $ "Hooks passed:" : map ("- " <>) successfulHooks]
 
 getSuccessfulHooks :: LintReport -> [Text]
 getSuccessfulHooks =

@@ -1,9 +1,9 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 import Control.Monad (forM, unless)
 import Data.Text qualified as Text
@@ -15,7 +15,6 @@ import Hooky.Lint (
   runLintRules,
  )
 import Options.Applicative qualified as Opt
--- import System.Environment (getExecutablePath)
 import System.Directory (doesFileExist, makeAbsolute)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
@@ -44,45 +43,45 @@ cliOptions =
     [ Opt.fullDesc
     , Opt.header "Hooky: A minimal git hooks manager"
     ]
-  where
-    parseOptions = do
-      command <-
-        Opt.hsubparser . mconcat $
-          [ Opt.command "install" (Opt.info parseInstall $ Opt.progDesc "Install hooky as the git pre-commit hook")
-          , Opt.command "run" (Opt.info parseRun $ Opt.progDesc "Run hooks")
-          , Opt.command "fix" (Opt.info parseFix $ Opt.progDesc "Run hooks with autofixing enabled")
-          , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
-          ]
+ where
+  parseOptions = do
+    command <-
+      Opt.hsubparser . mconcat $
+        [ Opt.command "install" (Opt.info parseInstall $ Opt.progDesc "Install hooky as the git pre-commit hook")
+        , Opt.command "run" (Opt.info parseRun $ Opt.progDesc "Run hooks")
+        , Opt.command "fix" (Opt.info parseFix $ Opt.progDesc "Run hooks with autofixing enabled")
+        , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
+        ]
 
-      configFile <-
-        Opt.optional . Opt.strOption . mconcat $
-          [ Opt.long "config"
-          , Opt.short 'c'
-          , Opt.help "Path to config file (default: .hooky.kdl)"
-          ]
+    configFile <-
+      Opt.optional . Opt.strOption . mconcat $
+        [ Opt.long "config"
+        , Opt.short 'c'
+        , Opt.help "Path to config file (default: .hooky.kdl)"
+        ]
 
-      pure CLIOptions{..}
+    pure CLIOptions{..}
 
-    parseInstall = do
-      pure CommandInstall
+  parseInstall = do
+    pure CommandInstall
 
-    parseRun = do
-      pure CommandRun
+  parseRun = do
+    pure CommandRun
 
-    parseFix = do
-      pure CommandFix
+  parseFix = do
+    pure CommandFix
 
-    parseLint = do
-      files <-
-        Opt.some . Opt.argument Opt.str . mconcat $
-          [ Opt.metavar "FILES"
-          ]
-      autofix <-
-        Opt.switch . mconcat $
-          [ Opt.long "fix"
-          , Opt.help "Whether to fix issues"
-          ]
-      pure CommandLint{..}
+  parseLint = do
+    files <-
+      Opt.some . Opt.argument Opt.str . mconcat $
+        [ Opt.metavar "FILES"
+        ]
+    autofix <-
+      Opt.switch . mconcat $
+        [ Opt.long "fix"
+        , Opt.help "Whether to fix issues"
+        ]
+    pure CommandLint{..}
 
 {----- Entrypoint -----}
 
@@ -90,9 +89,10 @@ main :: IO ()
 main = do
   cli <- Opt.execParser cliOptions
 
-  repo <- readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] "" >>= \case
-    (ExitFailure _, _, _) -> abort "hooky: not currently in a git repository"
-    (ExitSuccess, stdout, _) -> pure $ (Text.unpack . Text.strip . Text.pack) stdout
+  repo <-
+    readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] "" >>= \case
+      (ExitFailure _, _, _) -> abort "hooky: not currently in a git repository"
+      (ExitSuccess, stdout, _) -> pure $ (Text.unpack . Text.strip . Text.pack) stdout
 
   configFile <-
     case cli.configFile of
@@ -100,7 +100,7 @@ main = do
       Just fp -> makeAbsolute fp
 
   configFileExists <- doesFileExist configFile
-  unless configFileExists $
+  unless configFileExists $ do
     abort $ "Config file doesn't exist: " <> configFile
 
   config <- either (abort . Text.unpack) pure . parseConfig =<< Text.readFile configFile
