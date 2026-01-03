@@ -28,7 +28,7 @@ library
       base < 5
     , containers
     , directory
-    , kdl-hs
+    , kdl-hs >= 0.2.0
     , scientific
     , text
   default-language: GHC2021

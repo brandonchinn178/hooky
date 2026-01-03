@@ -19,12 +19,11 @@ module Hooky.Config (
 
 import Control.Arrow (returnA)
 import Data.Bifunctor qualified as Bifunctor
-import Data.KDL.Decoder.Arrow qualified as KDL
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
-import qualified Data.KDL.Decoder.DecodeM as KDL
+import KDL.Arrow qualified as KDL
 
 data Config = Config
   { files :: [Glob]
@@ -54,11 +53,11 @@ data HookConfig = HookConfig
   }
   deriving (Show, Eq)
 
-instance KDL.DecodeBaseNode HookConfig where
-  baseNodeDecoder = proc () -> do
+instance KDL.DecodeNode HookConfig where
+  nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
-    finalize <- KDL.children $ KDL.nodeWith "command" [] $ commandDecoder -< ()
-    files <- KDL.children $ KDL.nodeWith "files" [] $ KDL.some KDL.arg -< ()
+    finalize <- KDL.children $ KDL.nodeWith "command" $ commandDecoder -< ()
+    files <- KDL.children $ KDL.nodeWith "files" $ KDL.some KDL.arg -< ()
     returnA -< finalize name files
    where
     commandDecoder = proc () -> do
@@ -96,8 +95,8 @@ lintRuleName LintRule{rule} =
     LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
     LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
-instance KDL.DecodeBaseNode LintRule where
-  baseNodeDecoder = proc () -> do
+instance KDL.DecodeNode LintRule where
+  nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     rule <- ruleDecoder -< name
     files <- KDL.children $ KDL.argsAt "files" -< ()
@@ -131,8 +130,8 @@ data PassFilesMode
   | PassFiles_File
   deriving (Show, Eq)
 
-instance KDL.DecodeBaseValue PassFilesMode where
-  baseValueDecoder = KDL.withDecoder KDL.baseValueDecoder $ \case
+instance KDL.DecodeValue PassFilesMode where
+  valueDecoder = KDL.withDecoder KDL.valueDecoder $ \case
     Nothing -> pure PassFiles_None
     Just "xargs" -> pure PassFiles_XArgs
     Just "xargs_parallel" -> pure PassFiles_XArgsParallel
@@ -176,6 +175,6 @@ renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap 
     Left False -> "*"
     Right s -> Text.pack s
 
-instance KDL.DecodeBaseValue Glob where
-  baseValueTypeAnns _ = ["glob"]
-  baseValueDecoder = toGlob <$> KDL.text
+instance KDL.DecodeValue Glob where
+  validValueTypeAnns _ = ["glob"]
+  valueDecoder = toGlob <$> KDL.text
