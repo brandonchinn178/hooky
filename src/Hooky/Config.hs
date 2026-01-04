@@ -9,16 +9,22 @@
 module Hooky.Config (
   Config (..),
   parseConfig,
-  Glob (..),
   HookConfig (..),
   PassFilesMode (..),
   LintRule (..),
   LintRuleRule (..),
   lintRuleName,
+
+  -- * Glob
+  Glob (..),
+  matchesGlob,
+  toGlob,
+  renderGlob,
 ) where
 
 import Control.Arrow (returnA)
 import Data.Bifunctor qualified as Bifunctor
+import Data.List (tails)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -157,8 +163,8 @@ toGlob = Glob . parse0 . Text.unpack
     cs -> (False, parse1 cs)
 
   parse1 = \case
-    '/' : cs -> Left True : parse2 cs
-    cs -> parse2 cs
+    '/' : cs -> parse2 cs
+    cs -> Left True : parse2 cs
 
   parse2 = \case
     '*' : '*' : cs -> Left True : parse2 cs
@@ -174,6 +180,19 @@ renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap 
     Left True -> "**"
     Left False -> "*"
     Right s -> Text.pack s
+
+matchesGlob :: Glob -> Text -> Bool
+matchesGlob (Glob (isNegate, parts)) = (if isNegate then not else id) . go parts
+ where
+  go [] = Text.null
+  go (Left True : rest) = any (go rest) . wildcardDirs
+  go (Left False : rest) = any (go rest) . wildcardFile
+  go (Right s : rest) = maybe False (go rest) . Text.stripPrefix (Text.pack s)
+
+  wildcardDirs = map (Text.intercalate "/") . tails . Text.splitOn "/"
+  wildcardFile fp =
+    let (pre, post) = Text.breakOn "/" fp
+     in map (<> post) $ Text.tails pre
 
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]

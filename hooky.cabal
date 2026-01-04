@@ -47,33 +47,18 @@ executable hooky
   default-language: GHC2021
   ghc-options: -Wall -Wcompat
 
--- test-suite skeletest-tests
---   type: exitcode-stdio-1.0
---   ghc-options: -F -pgmF=skeletest-preprocessor
---   build-tool-depends: skeletest:skeletest-preprocessor
---   hs-source-dirs: test
---   main-is: Main.hs
---   other-modules:
---     ExampleSpec
---     Skeletest.AssertionsSpec
---     Skeletest.Internal.CLISpec
---     Skeletest.Internal.FixturesSpec
---     Skeletest.Internal.SnapshotSpec
---     Skeletest.Internal.SpecSpec
---     Skeletest.Internal.TestTargetsSpec
---     Skeletest.MainSpec
---     Skeletest.PredicateSpec
---     Skeletest.PropSpec
---     Skeletest.TestUtils.Integration
---   build-depends:
---       base
---     , aeson
---     , containers
---     , directory
---     , filepath
---     , skeletest
---     , process
---     , text
---     , unliftio
---   default-language: GHC2021
---   ghc-options: -Wall -Wcompat
+test-suite hooky-tests
+  type: exitcode-stdio-1.0
+  ghc-options: -F -pgmF=skeletest-preprocessor
+  build-tool-depends: skeletest:skeletest-preprocessor
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Hooky.ConfigSpec
+  build-depends:
+      base
+    , hooky
+    , skeletest
+    , text
+  default-language: GHC2021
+  ghc-options: -Wall -Wcompat
