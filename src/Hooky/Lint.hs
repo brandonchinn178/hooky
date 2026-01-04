@@ -29,6 +29,7 @@ import Hooky.Config (
   lintRuleName,
  )
 import System.Directory qualified as Dir
+import Data.Maybe (catMaybes)
 
 type Repo = FilePath
 type AutoFix = Bool
@@ -137,10 +138,10 @@ data LintAction
   = LintActionNoFile (LintRunConfig -> IO LintResult)
   | LintActionPerFile (LintRunConfig -> FilePath -> Text -> IO (LintResult, Text))
 
-notFixable ::
+noContents ::
   (LintRunConfig -> FilePath -> IO LintResult) ->
   (LintRunConfig -> FilePath -> Text -> IO (LintResult, Text))
-notFixable f = \config file contents -> (,contents) <$> f config file
+noContents f = \config file contents -> (,contents) <$> f config file
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
   deriving (Show, Eq)
@@ -156,7 +157,7 @@ fromLintRule LintRule{rule} =
     LintRule_TrailingWhitespace -> lint_TrailingWhitespace
 
 lint_CheckBrokenSymlinks :: LintAction
-lint_CheckBrokenSymlinks = LintActionPerFile . notFixable $ \_ file -> do
+lint_CheckBrokenSymlinks = LintActionPerFile . noContents $ \_ file -> do
   isLink <- Dir.pathIsSymbolicLink file
   linkTarget <- if isLink then Just <$> Dir.getSymbolicLinkTarget file else pure Nothing
   linkExists <- traverse Dir.doesPathExist linkTarget
@@ -166,14 +167,30 @@ lint_CheckBrokenSymlinks = LintActionPerFile . notFixable $ \_ file -> do
       else LintSuccess
 
 lint_CheckCaseConflict :: LintAction
-lint_CheckCaseConflict = LintActionPerFile . notFixable $ \_ _ -> do
+lint_CheckCaseConflict = LintActionPerFile . noContents $ \_ _ -> do
   -- FIXME
   pure LintSuccess
 
 lint_CheckMergeConflict :: LintAction
-lint_CheckMergeConflict = LintActionPerFile . notFixable $ \_ _ -> do
-  -- FIXME
-  pure LintSuccess
+lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
+  let result =
+        case catMaybes $ zipWith getMergeConflict (Text.lines contents) [1 :: Int ..] of
+          [] -> LintSuccess
+          (lineNum, conflictPat) : _ ->
+            LintFailed $
+              "Merge conflict string found at line " <> (Text.pack . show) lineNum <> ": " <> (Text.pack . show) conflictPat
+  pure (result, contents)
+ where
+  getMergeConflict line lineNum
+    | pat : _ <- filter (`Text.isPrefixOf` line) prefixMatches = Just (lineNum, pat)
+    | pat : _ <- filter (== line) fullMatches = Just (lineNum, pat)
+    | otherwise = Nothing
+  prefixMatches =
+      [ "<<<<<<< "
+      , "======= "
+      , ">>>>>>> "
+      ]
+  fullMatches = ["======="]
 
 lint_EndOfFileFixer :: LintAction
 lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
