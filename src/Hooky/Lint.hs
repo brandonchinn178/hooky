@@ -174,9 +174,20 @@ lint_CheckBrokenSymlinks = LintActionPerFile . noContents $ \_ file -> do
       else LintSuccess
 
 lint_CheckCaseConflict :: LintAction
-lint_CheckCaseConflict = LintActionPerFile . noContents $ \_ _ -> do
-  -- FIXME
-  pure LintSuccess
+lint_CheckCaseConflict = LintActionNoFile $ \config -> do
+  readProcessWithExitCode "git" ["-C", config.repo, "ls-files", "-z"] "" >>= \case
+    (ExitFailure _, _, _) -> pure $ LintFailed "hooky: git ls-files failed"
+    (ExitSuccess, stdout, _) -> do
+      let files = (Text.splitOn "\0" . Text.pack) stdout
+      pure $
+        case filter (\fp -> any (eqCaseInsensitive fp) files) files of
+          [] -> LintSuccess
+          badFiles ->
+            LintFailed . Text.intercalate "\n" $
+              "Files would conflict on case-insensitive systems:"
+                : map ("    - " <>) badFiles
+ where
+  eqCaseInsensitive a b = a /= b && Text.toLower a == Text.toLower b
 
 lint_CheckMergeConflict :: LintAction
 lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
