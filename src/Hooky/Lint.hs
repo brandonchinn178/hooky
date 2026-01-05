@@ -12,15 +12,21 @@ module Hooky.Lint (
   runLintRules,
   renderLintReport,
   lintReportSuccess,
+
+  -- * Re-exports from "Hooky.Config"
+  LintRule (..),
+  LintRuleRule (..),
+  toGlob,
 ) where
 
 import Control.Monad (forM, when)
-import Data.Either (partitionEithers)
 import Data.Foldable (foldlM)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid qualified as Monoid
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -30,10 +36,14 @@ import Hooky.Config (
   LintRuleRule (..),
   lintRuleName,
   matchesGlob,
+  toGlob,
  )
 import System.Directory qualified as Dir
 import System.Exit (ExitCode (..))
+import System.IO (hPutStrLn, stderr)
+import System.IO.Error (isDoesNotExistError)
 import System.Process (readProcessWithExitCode)
+import UnliftIO.Exception (tryJust)
 
 type Repo = FilePath
 type AutoFix = Bool
@@ -44,26 +54,65 @@ data LintRunConfig = LintRunConfig
   , rules :: [LintRule]
   }
 
+{----- runLintRules -----}
+
 runLintRules :: LintRunConfig -> [FilePath] -> IO LintReport
 runLintRules config files = do
-  let linters = map (\rule -> (rule, fromLintRule rule)) config.rules
-  let (nonFileLinters, fileLinters) =
-        partitionEithers
-          [ case action of
-              LintActionNoFile run -> Left (rule, run)
-              LintActionPerFile run -> Right (rule, run)
-          | (rule, action) <- linters
-          ]
+  let allLinters = map (\rule -> (rule, fromLintRule rule)) config.rules
+  nonFileLintResults <- runNonFileLintRules config allLinters
+  allFilesLintResults <- runAllFilesLintRules config allLinters
+  fileLintResults <- mapM (runPerFileLintRules config allLinters) files
+  pure . LintReport . Map.unionsWith (<>) $
+    [ Map.singleton Nothing nonFileLintResults
+    , allFilesLintResults
+    , Map.fromList fileLintResults
+    ]
 
-  nonFileLinterResults <-
-    fmap (Nothing,) $
-      forM nonFileLinters $ \(rule, run) -> do
-        result <- run config
-        pure (lintRuleName rule, result)
+runNonFileLintRules ::
+  LintRunConfig ->
+  [(LintRule, LintAction)] ->
+  IO [(Text, LintResult)]
+runNonFileLintRules config allLinters =
+  forM linters $ \(rule, run) -> do
+    result <- run config
+    pure (lintRuleName rule, result)
+ where
+  linters = [(rule, run) | (rule, LintActionNoFile run) <- allLinters]
 
-  fileLinterResults <-
-    forM files $ \file -> do
-      contents1 <- Text.readFile file
+runAllFilesLintRules ::
+  LintRunConfig ->
+  [(LintRule, LintAction)] ->
+  IO (Map (Maybe FilePath) [(Text, LintResult)])
+runAllFilesLintRules config allLinters = do
+  (code, std_out, std_err) <- readProcessWithExitCode "git" ["-C", config.repo, "ls-files", "-z"] ""
+  case code of
+    ExitSuccess -> pure ()
+    ExitFailure n -> do
+      -- TODO: better exceptions
+      hPutStrLn stderr std_err
+      error $ "hooky: git ls-files failed with code " <> show n
+
+  let files =
+        Set.fromList $
+          map Text.unpack . Text.splitOn "\0" . Text.dropWhileEnd (== '\0') . Text.pack $
+            std_out
+
+  fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
+    results <- run config files
+    pure [(Just fp, [(lintRuleName rule, result)]) | (fp, result) <- results]
+ where
+  linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
+
+runPerFileLintRules ::
+  LintRunConfig ->
+  [(LintRule, LintAction)] ->
+  FilePath ->
+  IO (Maybe FilePath, [(Text, LintResult)])
+runPerFileLintRules config allLinters file =
+  -- Skip reading file if there are no per-file linters to run
+  (if null linters then pure Nothing else readFileMaybe file) >>= \case
+    Nothing -> pure (Just file, [])
+    Just contents1 -> do
       (results, contents2) <-
         mapAndFoldM
           ( \contents (rule, run) -> do
@@ -77,13 +126,18 @@ runLintRules config files = do
                   else ((name, if result == LintFixed then LintFailed "file would be changed" else result), contents)
           )
           contents1
-          fileLinters
+          linters
       when (any ((== LintFixed) . snd) results) $ do
         Text.writeFile file contents2
       pure (Just file, results)
-
-  pure . LintReport . Map.fromList $ nonFileLinterResults : fileLinterResults
  where
+  linters = [(rule, run) | (rule, LintActionPerFile run) <- allLinters]
+  readFileMaybe fp =
+    fmap (either (const Nothing) Just) $
+      tryJust
+        (\e -> if isDoesNotExistError e then Just e else Nothing)
+        (Text.readFile fp)
+
   -- mapM that also threads state through the loop
   mapAndFoldM :: (Monad m) => (s -> a -> m (b, s)) -> s -> [a] -> m ([b], s)
   mapAndFoldM f s0 as = do
@@ -96,6 +150,8 @@ runLintRules config files = do
         ([], s0)
         as
     pure (reverse acc, s')
+
+{----- LintReport -----}
 
 -- | Map from filepath to the hooks and their results.
 newtype LintReport = LintReport {unwrap :: Map (Maybe FilePath) [(Text, LintResult)]}
@@ -141,14 +197,12 @@ getSuccessfulHooks =
     . (concat . Map.elems)
     . (.unwrap)
 
+{----- LintAction -----}
+
 data LintAction
   = LintActionNoFile (LintRunConfig -> IO LintResult)
+  | LintActionAllFiles (LintRunConfig -> Set FilePath -> IO [(FilePath, LintResult)])
   | LintActionPerFile (LintRunConfig -> FilePath -> Text -> IO (LintResult, Text))
-
-noContents ::
-  (LintRunConfig -> FilePath -> IO LintResult) ->
-  (LintRunConfig -> FilePath -> Text -> IO (LintResult, Text))
-noContents f = \config file contents -> (,contents) <$> f config file
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
   deriving (Show, Eq)
@@ -163,31 +217,38 @@ fromLintRule LintRule{rule} =
     LintRule_NoCommitToBranch branches -> lint_NoCommitToBranch branches
     LintRule_TrailingWhitespace -> lint_TrailingWhitespace
 
+{----- Lint rule implementations -----}
+
 lint_CheckBrokenSymlinks :: LintAction
-lint_CheckBrokenSymlinks = LintActionPerFile . noContents $ \_ file -> do
-  isLink <- Dir.pathIsSymbolicLink file
-  linkTarget <- if isLink then Just <$> Dir.getSymbolicLinkTarget file else pure Nothing
-  linkExists <- traverse Dir.doesPathExist linkTarget
-  pure $
-    if linkExists == Just False
-      then LintFailed "File is a broken symlink. Remove or exclude from rule"
-      else LintSuccess
+lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
+  map (,failure) <$> filterM (isBrokenSymlink files) (Set.toList files)
+ where
+  failure = LintFailed "File is a broken symlink. Remove or exclude from rule"
+  filterM f xs =
+    fmap catMaybes . forM xs $ \x -> do
+      p <- f x
+      pure $ if p then Just x else Nothing
+  isBrokenSymlink files fp = do
+    isLink <- Dir.pathIsSymbolicLink fp
+    if not isLink
+      then pure False
+      else do
+        linkTarget <- Dir.getSymbolicLinkTarget fp
+        pure $ linkTarget `Set.notMember` files
 
 lint_CheckCaseConflict :: LintAction
-lint_CheckCaseConflict = LintActionNoFile $ \config -> do
-  readProcessWithExitCode "git" ["-C", config.repo, "ls-files", "-z"] "" >>= \case
-    (ExitFailure _, _, _) -> pure $ LintFailed "hooky: git ls-files failed"
-    (ExitSuccess, stdout, _) -> do
-      let files = (Text.splitOn "\0" . Text.pack) stdout
-      pure $
-        case filter (\fp -> any (eqCaseInsensitive fp) files) files of
-          [] -> LintSuccess
-          badFiles ->
-            LintFailed . Text.intercalate "\n" $
-              "Files would conflict on case-insensitive systems:"
-                : map ("    - " <>) badFiles
+lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
+  let filePairs = allPairs . map Text.pack . Set.toList $ files
+  pure $
+    [ (Text.unpack fp, LintFailed $ "File conflicts with: " <> other)
+    | (a, b) <- filter (\(a, b) -> Text.toLower a == Text.toLower b) filePairs
+    , (fp, other) <- bothWays a b
+    ]
  where
-  eqCaseInsensitive a b = a /= b && Text.toLower a == Text.toLower b
+  allPairs = \case
+    [] -> []
+    x : xs -> [(x, y) | y <- xs] <> allPairs xs
+  bothWays a b = [(a, b), (b, a)]
 
 lint_CheckMergeConflict :: LintAction
 lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do

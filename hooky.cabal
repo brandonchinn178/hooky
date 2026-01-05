@@ -14,6 +14,7 @@ category: Tools
 build-type: Simple
 extra-source-files:
   README.md
+  test/Hooky/__snapshots__/LintSpec.snap.md
 
 source-repository head
   type: git
@@ -32,6 +33,7 @@ library
     , process
     , scientific
     , text
+    , unliftio
   default-language: GHC2021
   ghc-options: -Wall -Wcompat
 
@@ -56,10 +58,16 @@ test-suite hooky-tests
   main-is: Main.hs
   other-modules:
     Hooky.ConfigSpec
+    Hooky.LintSpec
+    Hooky.TestUtils.Git
   build-depends:
       base
+    , directory
+    , filepath
     , hooky
+    , process
     , skeletest
+    , temporary
     , text
   default-language: GHC2021
   ghc-options: -Wall -Wcompat
