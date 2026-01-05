@@ -16,7 +16,7 @@ import Hooky.Lint (
 import Hooky.TestUtils.Git (GitRepo (..), withGitRepo)
 import Skeletest
 import Skeletest.Predicate qualified as P
-import System.Directory (createFileLink)
+import System.Directory (createFileLink, removeFile)
 
 spec :: Spec
 spec = do
@@ -67,8 +67,49 @@ spec = do
       lintReportSuccess report `shouldBe` False
 
   describe "check_case_conflict" $ do
-    -- FIXME: test with `git config core.ignorecase false`
-    pure ()
+    let mkConfig repo =
+          LintRunConfig
+            { repo = repo
+            , autofix = False
+            , rules = [LintRule LintRule_CheckCaseConflict [toGlob "*"]]
+            }
+
+    it "succeeds when no files conflict" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" ""
+          writeFile "bar.txt" ""
+          git.add ["foo.txt", "bar.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt", "bar.txt"]
+      lintReportSuccess report `shouldBe` True
+
+    it "fails when files conflict" $ do
+      report <-
+        withGitRepo $ \git -> do
+          git.run ["config", "core.ignorecase", "false"]
+          writeFile "foo.txt" ""
+          git.add ["foo.txt"]
+          removeFile "foo.txt"
+          writeFile "FOO.TXT" ""
+          git.add ["FOO.TXT"]
+          git.run ["checkout", "foo.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt", "FOO.txt"]
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "fails when new file conflicts" $ do
+      report <-
+        withGitRepo $ \git -> do
+          git.run ["config", "core.ignorecase", "false"]
+          writeFile "foo.txt" ""
+          git.add ["foo.txt"]
+          git.commit "Initial commit"
+          removeFile "foo.txt"
+          writeFile "FOO.TXT" ""
+          git.add ["FOO.TXT"]
+          git.run ["checkout", "foo.txt"]
+          runLintRules (mkConfig git.repo) ["FOO.txt"]
+      lintReportSuccess report `shouldBe` False
 
   describe "check_merge_conflict" $ do
     pure ()
