@@ -11,6 +11,7 @@ import Data.Text.IO qualified as Text
 import Hooky.Config (Config (..), parseConfig)
 import Hooky.Lint (
   LintRunConfig (..),
+  lintReportSuccess,
   renderLintReport,
   runLintRules,
  )
@@ -140,6 +141,8 @@ cmdLint lintConfig files0 = do
 
   report <- runLintRules lintConfig files
   Text.putStrLn $ renderLintReport report
+  unless (lintReportSuccess report) $ do
+    exitFailure
 
 abort :: String -> IO a
 abort s = hPutStrLn stderr s >> exitFailure

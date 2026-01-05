@@ -11,6 +11,7 @@ module Hooky.Lint (
   LintResult (..),
   runLintRules,
   renderLintReport,
+  lintReportSuccess,
 ) where
 
 import Control.Monad (forM, when)
@@ -18,6 +19,7 @@ import Data.Either (partitionEithers)
 import Data.Foldable (foldlM)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Monoid qualified as Monoid
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -27,9 +29,11 @@ import Hooky.Config (
   LintRule (..),
   LintRuleRule (..),
   lintRuleName,
+  matchesGlob,
  )
 import System.Directory qualified as Dir
-import Data.Maybe (catMaybes)
+import System.Exit (ExitCode (..))
+import System.Process (readProcessWithExitCode)
 
 type Repo = FilePath
 type AutoFix = Bool
@@ -96,12 +100,15 @@ runLintRules config files = do
 -- | Map from filepath to the hooks and their results.
 newtype LintReport = LintReport {unwrap :: Map (Maybe FilePath) [(Text, LintResult)]}
 
+lintReportSuccess :: LintReport -> Bool
+lintReportSuccess = all ((== LintSuccess) . snd) . concat . Map.elems . (.unwrap)
+
 renderLintReport :: LintReport -> Text
 renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
  where
   failureMsgs =
     [ Text.intercalate "\n" $
-        (maybe "<no file>" Text.pack mFile <> ":")
+        (maybe "FAILURES" Text.pack mFile <> ":")
           : [ "- [" <> hook <> "] " <> msg
             | (hook, result) <- results
             , Just msg <-
@@ -186,10 +193,10 @@ lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
     | pat : _ <- filter (== line) fullMatches = Just (lineNum, pat)
     | otherwise = Nothing
   prefixMatches =
-      [ "<<<<<<< "
-      , "======= "
-      , ">>>>>>> "
-      ]
+    [ "<<<<<<< "
+    , "======= "
+    , ">>>>>>> "
+    ]
   fullMatches = ["======="]
 
 lint_EndOfFileFixer :: LintAction
@@ -203,9 +210,15 @@ lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
      in (Text.dropEnd (Text.length suf) s, suf)
 
 lint_NoCommitToBranch :: [Glob] -> LintAction
-lint_NoCommitToBranch _ = LintActionNoFile $ \_ -> do
-  -- FIXME
-  pure LintSuccess
+lint_NoCommitToBranch branches = LintActionNoFile $ \config ->
+  readProcessWithExitCode "git" ["-C", config.repo, "branch", "--show-current"] "" >>= \case
+    (ExitFailure _, _, _) -> pure $ LintFailed "hooky: could not get current branch"
+    (ExitSuccess, stdout, _) -> do
+      let branch = (Text.strip . Text.pack) stdout
+      pure $
+        if any (`matchesGlob` branch) branches
+          then LintFailed $ "cannot commit to branch: " <> branch
+          else LintSuccess
 
 lint_TrailingWhitespace :: LintAction
 lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> do
