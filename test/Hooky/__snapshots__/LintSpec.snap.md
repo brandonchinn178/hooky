@@ -1,6 +1,6 @@
 # Hooky.Lint
 
-## check_broken_symlinks / fails on broken symlinks
+## check_broken_symlinks / fails when a symlink is broken
 
 ```
 foo-link.txt:
@@ -15,4 +15,11 @@ FOO.TXT:
 
 foo.txt:
 - [check_case_conflict] File conflicts with: FOO.TXT
+```
+
+## check_merge_conflict / fails when files conflict
+
+```
+foo.txt:
+- [check_merge_conflict] Merge conflict string found at line 1: "<<<<<<< "
 ```

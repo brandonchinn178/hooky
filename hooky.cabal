@@ -69,5 +69,6 @@ test-suite hooky-tests
     , skeletest
     , temporary
     , text
+    , unliftio
   default-language: GHC2021
   ghc-options: -Wall -Wcompat

@@ -6,7 +6,6 @@ module Hooky.TestUtils.Git (
   withGitRepo,
 ) where
 
-import Control.Exception (onException)
 import GHC.Records (HasField (..))
 import System.Directory (
   createDirectoryIfMissing,
@@ -16,6 +15,7 @@ import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
+import UnliftIO.Exception (onException)
 
 data GitRepo = GitRepo
   { repo :: FilePath
@@ -48,7 +48,7 @@ withGitRepo action =
             }
     createDirectoryIfMissing True git.repo
     withCurrentDirectory git.repo . (`onException` outputLogs git.logfile) $ do
-      git.run ["init"]
+      git.run ["init", "--initial-branch", "main"]
       action git
  where
   outputLogs logFile = do

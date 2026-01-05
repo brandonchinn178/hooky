@@ -17,6 +17,7 @@ import Hooky.TestUtils.Git (GitRepo (..), withGitRepo)
 import Skeletest
 import Skeletest.Predicate qualified as P
 import System.Directory (createFileLink, removeFile)
+import UnliftIO.Exception (SomeException)
 
 spec :: Spec
 spec = do
@@ -28,7 +29,7 @@ spec = do
             , rules = [LintRule LintRule_CheckBrokenSymlinks [toGlob "*"]]
             }
 
-    it "succeeds on valid symlinks" $ do
+    it "succeeds when all symlinks are valid" $ do
       report <-
         withGitRepo $ \git -> do
           writeFile "foo.txt" "example"
@@ -37,7 +38,7 @@ spec = do
           runLintRules (mkConfig git.repo) ["foo.txt", "foo-link.txt"]
       lintReportSuccess report `shouldBe` True
 
-    it "fails on broken symlinks" $ do
+    it "fails when a symlink is broken" $ do
       report <-
         withGitRepo $ \git -> do
           createFileLink "foo.txt" "foo-link.txt"
@@ -55,7 +56,7 @@ spec = do
           runLintRules (mkConfig git.repo) ["foo-link.txt"]
       lintReportSuccess report `shouldBe` False
 
-    it "fails if target is deleted" $ do
+    it "fails when target is deleted" $ do
       report <-
         withGitRepo $ \git -> do
           writeFile "foo.txt" "example"
@@ -112,7 +113,35 @@ spec = do
       lintReportSuccess report `shouldBe` False
 
   describe "check_merge_conflict" $ do
-    pure ()
+    let mkConfig repo =
+          LintRunConfig
+            { repo = repo
+            , autofix = False
+            , rules = [LintRule LintRule_CheckMergeConflict [toGlob "*"]]
+            }
+
+    it "succeeds when there are no merge conflicts" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "" >> git.add ["foo.txt"] >> git.commit "Initial commit"
+          git.run ["switch", "-c", "branch1"] >> writeFile "foo.txt" "branch1" >> git.add ["foo.txt"] >> git.commit "branch1"
+          git.run ["switch", "-c", "branch2"] >> writeFile "bar.txt" "branch2" >> git.add ["bar.txt"] >> git.commit "branch2"
+          git.run ["switch", "main"]
+          git.run ["merge", "branch1", "branch2"]
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` True
+
+    it "fails when files conflict" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "" >> git.add ["foo.txt"] >> git.commit "Initial commit"
+          git.run ["switch", "-c", "branch1", "main"] >> writeFile "foo.txt" "branch1" >> git.add ["foo.txt"] >> git.commit "branch1"
+          git.run ["switch", "-c", "branch2", "main"] >> writeFile "foo.txt" "branch2" >> git.add ["foo.txt"] >> git.commit "branch2"
+          git.run ["switch", "main"]
+          git.run ["merge", "branch1", "branch2"] `shouldSatisfy` P.throws (P.anything @_ @SomeException)
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "end_of_file_fixer" $ do
     pure ()
