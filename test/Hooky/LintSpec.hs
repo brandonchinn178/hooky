@@ -131,7 +131,7 @@ spec = do
           runLintRules (mkConfig git.repo) ["foo.txt"]
       lintReportSuccess report `shouldBe` True
 
-    it "fails when files conflict" $ do
+    it "fails when there are merge conflicts" $ do
       report <-
         withGitRepo $ \git -> do
           writeFile "foo.txt" "" >> git.add ["foo.txt"] >> git.commit "Initial commit"
@@ -144,7 +144,58 @@ spec = do
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "end_of_file_fixer" $ do
-    pure ()
+    let mkConfig repo =
+          LintRunConfig
+            { repo = repo
+            , autofix = False
+            , rules = [LintRule LintRule_EndOfFileFixer [toGlob "*"]]
+            }
+
+    it "succeeds when all files have correct trailing newlines" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest\n"
+          git.add ["foo.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` True
+
+    it "fails when file has no trailing newlines" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest"
+          git.add ["foo.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "fails when file has multiple trailing newlines" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest\n\n\n\n"
+          git.add ["foo.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` False
+
+    it "autofixes when file has no trailing newlines" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest"
+          git.add ["foo.txt"]
+          report <- runLintRules (mkConfig git.repo){autofix = True} ["foo.txt"]
+          readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
+          pure report
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "autofixes when file has multiple trailing newlines" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest\n\n\n\n"
+          git.add ["foo.txt"]
+          report <- runLintRules (mkConfig git.repo){autofix = True} ["foo.txt"]
+          readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
+          pure report
+      lintReportSuccess report `shouldBe` False
 
   describe "no_commit_to_branch" $ do
     pure ()
