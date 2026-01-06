@@ -5,10 +5,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, guard, unless)
+import Data.Proxy (Proxy (..))
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Data.Typeable (typeOf, typeRep)
 import Hooky.Config (Config (..), parseConfig)
+import Hooky.Error (abort)
 import Hooky.Lint (
   LintRunConfig (..),
   lintReportSuccess,
@@ -21,6 +24,7 @@ import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (readProcessWithExitCode)
+import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
 
@@ -87,7 +91,7 @@ cliOptions =
 {----- Entrypoint -----}
 
 main :: IO ()
-main = do
+main = handleErrors $ do
   cli <- Opt.execParser cliOptions
 
   repo <-
@@ -102,9 +106,9 @@ main = do
 
   configFileExists <- doesFileExist configFile
   unless configFileExists $ do
-    abort $ "Config file doesn't exist: " <> configFile
+    abort $ "Config file doesn't exist: " <> Text.pack configFile
 
-  config <- either (abort . Text.unpack) pure . parseConfig =<< Text.readFile configFile
+  config <- either abort pure . parseConfig =<< Text.readFile configFile
 
   case cli.command of
     CommandInstall -> do
@@ -120,9 +124,9 @@ main = do
       --       { showStdoutOnSuccess = cliLogLevel >= Verbose
       --       }
       -- unless success exitFailure
-      error "TODO: run"
+      abort "TODO: run"
     CommandFix -> do
-      error "TODO: fix"
+      abort "TODO: fix"
     command@CommandLint{} ->
       cmdLint
         LintRunConfig
@@ -131,6 +135,19 @@ main = do
           , rules = config.lintRules
           }
         command.files
+
+handleErrors :: IO a -> IO a
+handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
+  hPutStrLn stderr $ "hooky: " <> strip (displayException e)
+  exitFailure
+ where
+  strip = Text.unpack . Text.strip . Text.pack
+  shouldHandle (SomeException e) = do
+    guard $ typeOf e `notElem` ignoredErrors
+    Just (SomeException e)
+  ignoredErrors =
+    [ typeRep (Proxy @ExitCode)
+    ]
 
 cmdLint :: LintRunConfig -> [FilePath] -> IO ()
 cmdLint lintConfig files0 = do
@@ -143,6 +160,3 @@ cmdLint lintConfig files0 = do
   Text.putStrLn $ renderLintReport report
   unless (lintReportSuccess report) $ do
     exitFailure
-
-abort :: String -> IO a
-abort s = hPutStrLn stderr s >> exitFailure

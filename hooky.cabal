@@ -24,6 +24,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     Hooky.Config
+    Hooky.Error
     Hooky.Lint
   build-depends:
       base < 5
@@ -47,6 +48,7 @@ executable hooky
     , optparse-applicative
     , process
     , text
+    , unliftio
   default-language: GHC2021
   ghc-options: -Wall -Wcompat
 

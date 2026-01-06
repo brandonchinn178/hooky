@@ -40,9 +40,9 @@ import Hooky.Config (
   matchesGlob,
   toGlob,
  )
+import Hooky.Error (abort)
 import System.Directory qualified as Dir
 import System.Exit (ExitCode (..))
-import System.IO (hPutStrLn, stderr)
 import System.IO.Error (isDoesNotExistError)
 import System.Process (readProcessWithExitCode)
 import UnliftIO.Exception (tryJust)
@@ -90,9 +90,10 @@ runAllFilesLintRules config allLinters = do
   case code of
     ExitSuccess -> pure ()
     ExitFailure n -> do
-      -- TODO: better exceptions
-      hPutStrLn stderr std_err
-      error $ "hooky: git ls-files failed with code " <> show n
+      abort . Text.unlines $
+        [ "git ls-files failed with code " <> (Text.pack . show) n
+        , Text.pack std_err
+        ]
 
   let files =
         Set.fromList $
