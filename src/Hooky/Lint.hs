@@ -20,6 +20,8 @@ module Hooky.Lint (
 ) where
 
 import Control.Monad (forM, when)
+import Data.Bifunctor (first)
+import Data.Char (isSpace)
 import Data.Foldable (foldlM)
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -276,10 +278,6 @@ lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
   case spanEnd (== '\n') contents of
     (_, suf) | Text.compareLength suf 1 == EQ -> pure (LintSuccess, contents)
     (stripped, _) -> pure (LintFixed, stripped <> "\n")
- where
-  spanEnd p s =
-    let suf = Text.takeWhileEnd p s
-     in (Text.dropEnd (Text.length suf) s, suf)
 
 lint_NoCommitToBranch :: [Glob] -> LintAction
 lint_NoCommitToBranch branches = LintActionNoFile $ \config ->
@@ -294,5 +292,18 @@ lint_NoCommitToBranch branches = LintActionNoFile $ \config ->
 
 lint_TrailingWhitespace :: LintAction
 lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> do
-  -- FIXME
-  pure (LintSuccess, contents)
+  let (contents', success) = overLines contents $ \line ->
+        let (line', noTrailingWs) = spanEnd isSpace line
+         in (line', Text.null noTrailingWs)
+  pure (if and success then LintSuccess else LintFixed, contents')
+ where
+  -- Avoid unlines/lines, since they implicitly add trailing newline
+  overLines :: Text -> (Text -> (Text, a)) -> (Text, [a])
+  overLines s f = first (Text.intercalate "\n") . unzip . map f . Text.splitOn "\n" $ s
+
+{----- Utilities -----}
+
+spanEnd :: (Char -> Bool) -> Text -> (Text, Text)
+spanEnd p s =
+  let suf = Text.takeWhileEnd p s
+   in (Text.dropEnd (Text.length suf) s, suf)

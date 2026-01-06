@@ -228,4 +228,40 @@ spec = do
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "trailing_whitespace" $ do
-    pure ()
+    let mkConfig repo =
+          LintRunConfig
+            { repo = repo
+            , autofix = False
+            , rules = [LintRule LintRule_TrailingWhitespace [toGlob "*"]]
+            }
+
+    it "succeeds when no lines have trailing whitespace" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" "test\ntest\n"
+          git.add ["foo.txt"]
+          runLintRules (mkConfig git.repo) ["foo.txt"]
+      lintReportSuccess report `shouldBe` True
+
+    it "fails when line has trailing whitespace" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "end-space.txt" "test  \ntest\n"
+          writeFile "end-tab.txt" "test\t\t\ntest\n"
+          git.add ["end-space.txt", "end-tab.txt"]
+          runLintRules (mkConfig git.repo) ["end-space.txt", "end-tab.txt"]
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "autofixes trailing whitespace" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "end-space.txt" "test  \ntest\n"
+          writeFile "end-tab.txt" "test\t\t\ntest\n"
+          git.add ["end-space.txt", "end-tab.txt"]
+          report <- runLintRules (mkConfig git.repo){autofix = True} ["end-space.txt", "end-tab.txt"]
+          readFile "end-space.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
+          readFile "end-tab.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
+          pure report
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot

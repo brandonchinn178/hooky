@@ -51,3 +51,23 @@ FAILURES:
 FAILURES:
 - [no_commit_to_branch] cannot commit to branch: release-2.0
 ```
+
+## trailing_whitespace / autofixes trailing whitespace
+
+```
+end-space.txt:
+- [trailing_whitespace] FIXED
+
+end-tab.txt:
+- [trailing_whitespace] FIXED
+```
+
+## trailing_whitespace / fails when line has trailing whitespace
+
+```
+end-space.txt:
+- [trailing_whitespace] file would be changed
+
+end-tab.txt:
+- [trailing_whitespace] file would be changed
+```
