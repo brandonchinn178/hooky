@@ -198,7 +198,34 @@ spec = do
       lintReportSuccess report `shouldBe` False
 
   describe "no_commit_to_branch" $ do
-    pure ()
+    let mkConfig repo branch =
+          LintRunConfig
+            { repo = repo
+            , autofix = False
+            , rules = [LintRule (LintRule_NoCommitToBranch [toGlob branch]) [toGlob "*"]]
+            }
+
+    it "succeeds when committing on another branch" $ do
+      report <-
+        withGitRepo $ \git -> do
+          git.run ["switch", "-c", "test"]
+          runLintRules (mkConfig git.repo "main") []
+      lintReportSuccess report `shouldBe` True
+
+    it "fails when committing on bad branch" $ do
+      report <-
+        withGitRepo $ \git -> do
+          runLintRules (mkConfig git.repo "main") []
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "supports globs" $ do
+      report <-
+        withGitRepo $ \git -> do
+          git.run ["switch", "-c", "release-2.0"]
+          runLintRules (mkConfig git.repo "release-*") []
+      lintReportSuccess report `shouldBe` False
+      renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "trailing_whitespace" $ do
     pure ()

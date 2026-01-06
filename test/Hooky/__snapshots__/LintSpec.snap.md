@@ -37,3 +37,17 @@ foo.txt:
 foo.txt:
 - [end_of_file_fixer] file would be changed
 ```
+
+## no_commit_to_branch / fails when committing on bad branch
+
+```
+FAILURES:
+- [no_commit_to_branch] cannot commit to branch: main
+```
+
+## no_commit_to_branch / supports globs
+
+```
+FAILURES:
+- [no_commit_to_branch] cannot commit to branch: release-2.0
+```
