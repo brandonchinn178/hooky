@@ -40,30 +40,26 @@ import Hooky.Config (
   matchesGlob,
   toGlob,
  )
-import Hooky.Error (abort)
+import Hooky.Utils.Git (GitClient)
 import System.Directory qualified as Dir
-import System.Exit (ExitCode (..))
 import System.IO.Error (isDoesNotExistError)
-import System.Process (readProcessWithExitCode)
 import UnliftIO.Exception (tryJust)
 
-type Repo = FilePath
 type AutoFix = Bool
 
 data LintRunConfig = LintRunConfig
-  { repo :: Repo
-  , autofix :: AutoFix
+  { autofix :: AutoFix
   , rules :: [LintRule]
   }
 
 {----- runLintRules -----}
 
-runLintRules :: LintRunConfig -> [FilePath] -> IO LintReport
-runLintRules config files = do
+runLintRules :: GitClient -> LintRunConfig -> [FilePath] -> IO LintReport
+runLintRules git config files = do
   let allLinters = map (\rule -> (rule, fromLintRule rule)) config.rules
-  nonFileLintResults <- runNonFileLintRules config allLinters
-  allFilesLintResults <- runAllFilesLintRules config allLinters
-  fileLintResults <- mapM (runPerFileLintRules config allLinters) files
+  nonFileLintResults <- runNonFileLintRules git allLinters
+  allFilesLintResults <- runAllFilesLintRules git allLinters
+  fileLintResults <- mapM (runPerFileLintRules git config allLinters) files
   pure . LintReport . Map.unionsWith (<>) $
     [ Map.singleton Nothing nonFileLintResults
     , allFilesLintResults
@@ -71,47 +67,40 @@ runLintRules config files = do
     ]
 
 runNonFileLintRules ::
-  LintRunConfig ->
+  GitClient ->
   [(LintRule, LintAction)] ->
   IO [(Text, LintResult)]
-runNonFileLintRules config allLinters =
+runNonFileLintRules git allLinters =
   forM linters $ \(rule, run) -> do
-    result <- run config
+    result <- run git
     pure (lintRuleName rule, result)
  where
   linters = [(rule, run) | (rule, LintActionNoFile run) <- allLinters]
 
 runAllFilesLintRules ::
-  LintRunConfig ->
+  GitClient ->
   [(LintRule, LintAction)] ->
   IO (Map (Maybe FilePath) [(Text, LintResult)])
-runAllFilesLintRules config allLinters = do
-  (code, std_out, std_err) <- readProcessWithExitCode "git" ["-C", config.repo, "ls-files", "-z"] ""
-  case code of
-    ExitSuccess -> pure ()
-    ExitFailure n -> do
-      abort . Text.unlines $
-        [ "git ls-files failed with code " <> (Text.pack . show) n
-        , Text.pack std_err
-        ]
-
+runAllFilesLintRules git allLinters = do
+  stdout <- git.query ["ls-files", "-z"]
   let files =
         Set.fromList $
-          map Text.unpack . Text.splitOn "\0" . Text.dropWhileEnd (== '\0') . Text.pack $
-            std_out
+          map Text.unpack . Text.splitOn "\0" . Text.dropWhileEnd (== '\0') $
+            stdout
 
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
-    results <- run config files
+    results <- run git files
     pure [(Just fp, [(lintRuleName rule, result)]) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
 
 runPerFileLintRules ::
+  GitClient ->
   LintRunConfig ->
   [(LintRule, LintAction)] ->
   FilePath ->
   IO (Maybe FilePath, [(Text, LintResult)])
-runPerFileLintRules config allLinters file =
+runPerFileLintRules git config allLinters file =
   -- Skip reading file if there are no per-file linters to run
   (if null linters then pure Nothing else readFileMaybe file) >>= \case
     Nothing -> pure (Just file, [])
@@ -120,7 +109,7 @@ runPerFileLintRules config allLinters file =
         mapAndFoldM
           ( \contents (rule, run) -> do
               -- TODO: check if file is valid for rule
-              (result, contents') <- run config file contents
+              (result, contents') <- run git file contents
               let name = lintRuleName rule
               pure $
                 if config.autofix
@@ -203,9 +192,9 @@ getSuccessfulHooks =
 {----- LintAction -----}
 
 data LintAction
-  = LintActionNoFile (LintRunConfig -> IO LintResult)
-  | LintActionAllFiles (LintRunConfig -> Set FilePath -> IO [(FilePath, LintResult)])
-  | LintActionPerFile (LintRunConfig -> FilePath -> Text -> IO (LintResult, Text))
+  = LintActionNoFile (GitClient -> IO LintResult)
+  | LintActionAllFiles (GitClient -> Set FilePath -> IO [(FilePath, LintResult)])
+  | LintActionPerFile (GitClient -> FilePath -> Text -> IO (LintResult, Text))
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
   deriving (Show, Eq)
@@ -281,15 +270,12 @@ lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
     (stripped, _) -> pure (LintFixed, stripped <> "\n")
 
 lint_NoCommitToBranch :: [Glob] -> LintAction
-lint_NoCommitToBranch branches = LintActionNoFile $ \config ->
-  readProcessWithExitCode "git" ["-C", config.repo, "branch", "--show-current"] "" >>= \case
-    (ExitFailure _, _, _) -> pure $ LintFailed "hooky: could not get current branch"
-    (ExitSuccess, stdout, _) -> do
-      let branch = (Text.strip . Text.pack) stdout
-      pure $
-        if any (`matchesGlob` branch) branches
-          then LintFailed $ "cannot commit to branch: " <> branch
-          else LintSuccess
+lint_NoCommitToBranch branches = LintActionNoFile $ \git -> do
+  branch <- git.query ["branch", "--show-current"]
+  pure $
+    if any (`matchesGlob` branch) branches
+      then LintFailed $ "cannot commit to branch: " <> branch
+      else LintSuccess
 
 lint_TrailingWhitespace :: LintAction
 lint_TrailingWhitespace = LintActionPerFile $ \_ _ contents -> do

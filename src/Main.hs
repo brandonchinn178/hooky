@@ -18,12 +18,12 @@ import Hooky.Lint (
   renderLintReport,
   runLintRules,
  )
+import Hooky.Utils.Git (GitClient (..), initGitClient)
 import Options.Applicative qualified as Opt
 import System.Directory (doesFileExist, makeAbsolute)
-import System.Exit (ExitCode (..), exitFailure)
+import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
-import System.Process (readProcessWithExitCode)
 import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
@@ -94,14 +94,10 @@ main :: IO ()
 main = handleErrors $ do
   cli <- Opt.execParser cliOptions
 
-  repo <-
-    readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] "" >>= \case
-      (ExitFailure _, _, _) -> abort "hooky: not currently in a git repository"
-      (ExitSuccess, stdout, _) -> pure $ (Text.unpack . Text.strip . Text.pack) stdout
-
+  git <- initGitClient
   configFile <-
     case cli.configFile of
-      Nothing -> pure $ repo </> ".hooky.kdl"
+      Nothing -> pure $ git.repo </> ".hooky.kdl"
       Just fp -> makeAbsolute fp
 
   configFileExists <- doesFileExist configFile
@@ -129,9 +125,9 @@ main = handleErrors $ do
       abort "TODO: fix"
     command@CommandLint{} ->
       cmdLint
+        git
         LintRunConfig
-          { repo = repo
-          , autofix = command.autofix
+          { autofix = command.autofix
           , rules = config.lintRules
           }
         command.files
@@ -149,14 +145,14 @@ handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
     [ typeRep (Proxy @ExitCode)
     ]
 
-cmdLint :: LintRunConfig -> [FilePath] -> IO ()
-cmdLint lintConfig files0 = do
+cmdLint :: GitClient -> LintRunConfig -> [FilePath] -> IO ()
+cmdLint git lintConfig files0 = do
   files <- fmap concat . forM files0 $ \file ->
     case file of
       '@' : f -> map Text.unpack . Text.lines <$> Text.readFile f
       f -> pure [f]
 
-  report <- runLintRules lintConfig files
+  report <- runLintRules git lintConfig files
   Text.putStrLn $ renderLintReport report
   unless (lintReportSuccess report) $ do
     exitFailure

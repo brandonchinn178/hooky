@@ -1,56 +1,47 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hooky.TestUtils.Git (
-  GitRepo (..),
+  TestGitClient (..),
   withGitRepo,
 ) where
 
+import Control.Monad (unless)
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import GHC.Records (HasField (..))
+import Hooky.Utils.Git (GitClient (..))
 import System.Directory (
   createDirectoryIfMissing,
   withCurrentDirectory,
  )
-import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
+import System.IO qualified as IO
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (readProcessWithExitCode)
-import UnliftIO.Exception (onException)
 
-data GitRepo = GitRepo
-  { repo :: FilePath
-  , logfile :: FilePath
-  }
+newtype TestGitClient = TestGitClient GitClient
 
-instance HasField "run" GitRepo ([String] -> IO ()) where
+instance HasField "client" TestGitClient GitClient where
+  getField (TestGitClient client) = client
+instance HasField "exec" TestGitClient ([String] -> IO ()) where
   getField git args = do
-    (code, stdout, stderr) <- readProcessWithExitCode "git" (["-C", git.repo] <> args) ""
-    appendFile git.logfile stdout
-    appendFile git.logfile stderr
-    case code of
-      ExitSuccess -> pure ()
-      ExitFailure n -> do
-        error $ "command exited with code " <> show n <> ": " <> show ("git" : args)
-instance HasField "add" GitRepo ([FilePath] -> IO ()) where
-  getField git files = git.run $ "add" : files
-instance HasField "commit" GitRepo (String -> IO ()) where
-  getField git msg = git.run ["commit", "-m", msg]
-instance HasField "rm" GitRepo ([FilePath] -> IO ()) where
-  getField git files = git.run $ "rm" : files
+    log_ $ "exec: " <> (Text.pack . show) args
+    stdout <- git.client.query args
+    unless (Text.null stdout) $ do
+      log_ $ "stdout:\n" <> stdout
+   where
+    log_ msg = Text.hPutStrLn IO.stderr $ "[TestGitClient] " <> msg
 
-withGitRepo :: (GitRepo -> IO a) -> IO a
+withGitRepo :: (TestGitClient -> IO a) -> IO a
 withGitRepo action =
   withSystemTempDirectory "git.XXXX" $ \tmpdir -> do
     let git =
-          GitRepo
-            { repo = tmpdir </> "repo"
-            , logfile = tmpdir </> "git.log"
-            }
-    createDirectoryIfMissing True git.repo
-    withCurrentDirectory git.repo . (`onException` outputLogs git.logfile) $ do
-      git.run ["init", "--initial-branch", "main"]
+          TestGitClient
+            GitClient
+              { repo = tmpdir </> "repo"
+              }
+    createDirectoryIfMissing True git.client.repo
+    withCurrentDirectory git.client.repo $ do
+      git.exec ["init", "--initial-branch", "main"]
       action git
- where
-  outputLogs logFile = do
-    putStrLn "\n===== Git output ====="
-    putStrLn =<< readFile logFile

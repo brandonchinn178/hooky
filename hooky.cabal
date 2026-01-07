@@ -26,6 +26,7 @@ library
     Hooky.Config
     Hooky.Error
     Hooky.Lint
+    Hooky.Utils.Git
   build-depends:
       base < 5
     , containers
@@ -67,8 +68,7 @@ test-suite hooky-tests
     , directory
     , filepath
     , hooky
-    , process
-    , skeletest
+    , skeletest >= 0.3.0
     , temporary
     , text
     , unliftio
