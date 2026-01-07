@@ -157,28 +157,12 @@ main = handleErrors $ do
         , "--mode"
         , Text.pack $ renderRunGitMode mode
         ]
-    CommandRun -> do
-      -- config <- loadConfig configFile
-      -- success <-
-      --   doRun repo config $
-      --     RunOptions
-      --       { showStdoutOnSuccess = cliLogLevel >= Verbose
-      --       }
-      -- unless success exitFailure
-      abort "TODO: run"
-    CommandRunGit{} -> do
-      -- TODO:
-      --   if
-      -- config <- loadConfig configFile
-      -- success <-
-      --   doRun repo config $
-      --     RunOptions
-      --       { showStdoutOnSuccess = cliLogLevel >= Verbose
-      --       }
-      -- unless success exitFailure
-      putStrLn "TODO: run git"
-    CommandFix -> do
-      abort "TODO: fix"
+    CommandRun ->
+      cmdRun git config
+    CommandRunGit{..} ->
+      cmdRunGit git config mode
+    CommandFix ->
+      cmdFix git config
     command@CommandLint{} ->
       cmdLint
         git
@@ -200,6 +184,8 @@ handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
   ignoredErrors =
     [ typeRep (Proxy @ExitCode)
     ]
+
+{----- hooky install -----}
 
 cmdInstall :: GitClient -> [Text] -> IO ()
 cmdInstall git args = do
@@ -227,6 +213,8 @@ cmdInstall git args = do
     p <- getPermissions fp
     setPermissions fp p{Permissions.executable = True}
 
+{----- hooky __git -----}
+
 data RunGitMode = RunGit_Check | RunGit_Fix | RunGit_FixAdd
   deriving (Show, Eq)
 
@@ -245,6 +233,37 @@ renderRunGitMode = \case
   RunGit_Check -> "check"
   RunGit_Fix -> "fix"
   RunGit_FixAdd -> "fix-add"
+
+cmdRunGit :: GitClient -> Config -> RunGitMode -> IO ()
+cmdRunGit git config = \case
+  RunGit_Check -> do
+    cmdRun git config
+  RunGit_Fix -> do
+    cmdFix git config
+  RunGit_FixAdd -> do
+    cmdFix git config
+    pure () -- TODO: add modified files
+
+{----- hooky run ------}
+
+cmdRun :: GitClient -> Config -> IO ()
+cmdRun _ _ = do
+  -- config <- loadConfig configFile
+  -- success <-
+  --   doRun repo config $
+  --     RunOptions
+  --       { showStdoutOnSuccess = cliLogLevel >= Verbose
+  --       }
+  -- unless success exitFailure
+  putStrLn "TODO: run"
+
+{----- hooky fix ------}
+
+cmdFix :: GitClient -> Config -> IO ()
+cmdFix _ _ = do
+  abort "TODO: fix"
+
+{----- hooky lint ------}
 
 cmdLint :: GitClient -> LintRunConfig -> [FilePath] -> IO ()
 cmdLint git lintConfig files0 = do
