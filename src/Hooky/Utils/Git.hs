@@ -48,3 +48,5 @@ instance HasField "exec" GitClient ([String] -> IO ()) where
   getField git args = void . fromEitherM $ git.run args
 instance HasField "query" GitClient ([String] -> IO Text) where
   getField git args = fromEitherM $ git.run args
+instance HasField "getPath" GitClient (FilePath -> IO Text) where
+  getField git path = git.query ["rev-parse", "--git-path", path]

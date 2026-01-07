@@ -5,8 +5,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-import Control.Monad (forM, guard, unless)
+import Control.Applicative ((<|>))
+import Control.Monad (forM, guard, unless, when)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Proxy (Proxy (..))
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Data.Typeable (typeOf, typeRep)
@@ -20,7 +23,15 @@ import Hooky.Lint (
  )
 import Hooky.Utils.Git (GitClient (..), initGitClient)
 import Options.Applicative qualified as Opt
-import System.Directory (doesFileExist, makeAbsolute)
+import System.Directory (
+  doesFileExist,
+  getPermissions,
+  makeAbsolute,
+  renameFile,
+  setPermissions,
+ )
+import System.Directory qualified as Permissions (Permissions (..))
+import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
@@ -35,6 +46,11 @@ data CLIOptions = CLIOptions
 
 data CLICommand
   = CommandInstall
+      { mode :: RunGitMode
+      }
+  | CommandRunGit
+      { mode :: RunGitMode
+      }
   | CommandRun
   | CommandFix
   | CommandLint
@@ -42,21 +58,20 @@ data CLICommand
       , autofix :: Bool
       }
 
-cliOptions :: Opt.ParserInfo CLIOptions
-cliOptions =
-  Opt.info (Opt.helper <*> parseOptions) . mconcat $
-    [ Opt.fullDesc
-    , Opt.header "Hooky: A minimal git hooks manager"
-    ]
+loadCLIOptions :: IO CLIOptions
+loadCLIOptions =
+  Opt.customExecParser (Opt.prefs $ mconcat prefs) $
+    Opt.info (Opt.helper <*> parseOptions) . mconcat $
+      [ Opt.fullDesc
+      , Opt.header "Hooky: A minimal git hooks manager"
+      ]
  where
+  prefs =
+    [ Opt.subparserInline
+    ]
+
   parseOptions = do
-    command <-
-      Opt.hsubparser . mconcat $
-        [ Opt.command "install" (Opt.info parseInstall $ Opt.progDesc "Install hooky as the git pre-commit hook")
-        , Opt.command "run" (Opt.info parseRun $ Opt.progDesc "Run hooks")
-        , Opt.command "fix" (Opt.info parseFix $ Opt.progDesc "Run hooks with autofixing enabled")
-        , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
-        ]
+    command <- parseInternalCommand <|> parseCommand
 
     configFile <-
       Opt.optional . Opt.strOption . mconcat $
@@ -67,8 +82,36 @@ cliOptions =
 
     pure CLIOptions{..}
 
+  parseInternalCommand =
+    Opt.subparser . mconcat $
+      [ Opt.internal
+      , Opt.command "__git" (Opt.info parseRunGit $ Opt.progDesc "Run as a git hook")
+      ]
+
+  parseCommand =
+    Opt.hsubparser . mconcat $
+      [ Opt.command "install" (Opt.info parseInstall $ Opt.progDesc "Install hooky as the git pre-commit hook")
+      , Opt.command "run" (Opt.info parseRun $ Opt.progDesc "Run hooks")
+      , Opt.command "fix" (Opt.info parseFix $ Opt.progDesc "Run hooks with autofixing enabled")
+      , Opt.command "lint" (Opt.info parseLint $ Opt.progDesc "Run builtin hooky lint rules")
+      ]
+
   parseInstall = do
-    pure CommandInstall
+    mode <- parseRunGitMode
+    pure CommandInstall{..}
+
+  parseRunGit = do
+    mode <- parseRunGitMode
+    pure CommandRunGit{..}
+
+  parseRunGitMode = do
+    let modes = uncommas $ map renderRunGitMode allRunGitModes
+        uncommas = Text.unpack . Text.intercalate ", " . map Text.pack
+    fmap (fromMaybe RunGit_Check) . Opt.optional $
+      Opt.option (Opt.maybeReader readRunGitMode) . mconcat $
+        [ Opt.long "mode"
+        , Opt.help $ "Mode to run hooky in during git hooks. One of: " <> modes
+        ]
 
   parseRun = do
     pure CommandRun
@@ -92,7 +135,7 @@ cliOptions =
 
 main :: IO ()
 main = handleErrors $ do
-  cli <- Opt.execParser cliOptions
+  cli <- loadCLIOptions
 
   git <- initGitClient
   configFile <-
@@ -107,11 +150,13 @@ main = handleErrors $ do
   config <- either abort pure . parseConfig =<< Text.readFile configFile
 
   case cli.command of
-    CommandInstall -> do
-      -- exe <- getExecutablePath >>= parseAbsFile
-      -- let args = ["--config", Text.pack (toFilePath configFile)]
-      -- doInstall repo exe args
-      error "TODO: install"
+    CommandInstall{..} ->
+      cmdInstall git $
+        [ "--config"
+        , Text.pack configFile
+        , "--mode"
+        , Text.pack $ renderRunGitMode mode
+        ]
     CommandRun -> do
       -- config <- loadConfig configFile
       -- success <-
@@ -121,6 +166,17 @@ main = handleErrors $ do
       --       }
       -- unless success exitFailure
       abort "TODO: run"
+    CommandRunGit{} -> do
+      -- TODO:
+      --   if
+      -- config <- loadConfig configFile
+      -- success <-
+      --   doRun repo config $
+      --     RunOptions
+      --       { showStdoutOnSuccess = cliLogLevel >= Verbose
+      --       }
+      -- unless success exitFailure
+      putStrLn "TODO: run git"
     CommandFix -> do
       abort "TODO: fix"
     command@CommandLint{} ->
@@ -144,6 +200,51 @@ handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
   ignoredErrors =
     [ typeRep (Proxy @ExitCode)
     ]
+
+cmdInstall :: GitClient -> [Text] -> IO ()
+cmdInstall git args = do
+  precommitHookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
+  precommitHookFileExists <- doesFileExist precommitHookFile
+  -- TODO: Don't back up if reinstalling hooky
+  when precommitHookFileExists $ do
+    let backup = precommitHookFile <> ".bak"
+    renameFile precommitHookFile backup
+    let border = Text.replicate 50 "*"
+    Text.putStrLn border
+    Text.putStrLn "Found previously installed pre-commit hooks."
+    Text.putStrLn $ "Backed up to: " <> Text.pack backup
+    Text.putStrLn border
+
+  exe <- getExecutablePath
+  Text.writeFile precommitHookFile . Text.unlines $
+    [ Text.unwords $ ["exec", Text.pack exe, "__git"] <> args
+    ]
+  makeExecutable precommitHookFile
+
+  Text.putStrLn $ "Hooky installed at: " <> Text.pack precommitHookFile
+ where
+  makeExecutable fp = do
+    p <- getPermissions fp
+    setPermissions fp p{Permissions.executable = True}
+
+data RunGitMode = RunGit_Check | RunGit_Fix | RunGit_FixAdd
+  deriving (Show, Eq)
+
+allRunGitModes :: [RunGitMode]
+allRunGitModes =
+  [ RunGit_Check
+  , RunGit_Fix
+  , RunGit_FixAdd
+  ]
+
+readRunGitMode :: String -> Maybe RunGitMode
+readRunGitMode s = listToMaybe $ filter ((== s) . renderRunGitMode) allRunGitModes
+
+renderRunGitMode :: RunGitMode -> String
+renderRunGitMode = \case
+  RunGit_Check -> "check"
+  RunGit_Fix -> "fix"
+  RunGit_FixAdd -> "fix-add"
 
 cmdLint :: GitClient -> LintRunConfig -> [FilePath] -> IO ()
 cmdLint git lintConfig files0 = do
