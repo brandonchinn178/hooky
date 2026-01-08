@@ -43,6 +43,7 @@ executable hooky
   main-is: src/Main.hs
   build-depends:
       base
+    , choice
     , directory
     , filepath
     , hooky
