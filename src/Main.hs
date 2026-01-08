@@ -179,12 +179,12 @@ cmdInstall =
     }
 
 data Args_Install = Args_Install
-  { mode :: RunGitMode
+  { mode :: RunMode
   }
 
 instance IsCLIArgs Args_Install where
   cliArgsParse = do
-    mode <- parseRunGitMode
+    mode <- parseRunMode
     pure Args_Install{..}
   cliArgsRun args git (configFile, _) = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
@@ -199,7 +199,7 @@ instance IsCLIArgs Args_Install where
           , "--config"
           , quote . Text.pack $ configFile
           , "--mode"
-          , quote . Text.pack $ renderRunGitMode args.mode
+          , quote . Text.pack $ renderRunMode args.mode
           ]
       ]
     makeExecutable hookFile
@@ -234,12 +234,12 @@ cmdRunGit =
     }
 
 data Args_RunGit = Args_RunGit
-  { mode :: RunGitMode
+  { mode :: RunMode
   }
 
 instance IsCLIArgs Args_RunGit where
   cliArgsParse = do
-    mode <- parseRunGitMode
+    mode <- parseRunMode
     pure Args_RunGit{..}
   cliArgsRun args git (_, config) = do
     files <- pure []
@@ -360,21 +360,21 @@ instance IsCLIArgs Args_Lint where
 
   cliArgsFiles = Just ((.files), \files' Args_Lint{..} -> Args_Lint{files = files', ..})
 
-{----- RunGitMode -----}
+{----- RunMode -----}
 
-data RunGitMode = Mode_Check | Mode_Fix | Mode_FixAdd
+data RunMode = Mode_Check | Mode_Fix | Mode_FixAdd
   deriving (Show, Eq)
 
-allRunGitModes :: [RunGitMode]
-allRunGitModes =
+allRunModes :: [RunMode]
+allRunModes =
   [ Mode_Check
   , Mode_Fix
   , Mode_FixAdd
   ]
 
-parseRunGitMode :: Opt.Parser RunGitMode
-parseRunGitMode = do
-  let modes = uncommas $ map renderRunGitMode allRunGitModes
+parseRunMode :: Opt.Parser RunMode
+parseRunMode = do
+  let modes = uncommas $ map renderRunMode allRunModes
       uncommas = Text.unpack . Text.intercalate ", " . map Text.pack
   fmap (fromMaybe Mode_Check) . Opt.optional $
     Opt.option (Opt.maybeReader parse) . mconcat $
@@ -382,10 +382,10 @@ parseRunGitMode = do
       , Opt.help $ "Mode to run hooky in during git hooks. One of: " <> modes
       ]
  where
-  parse s = listToMaybe $ filter ((== s) . renderRunGitMode) allRunGitModes
+  parse s = listToMaybe $ filter ((== s) . renderRunMode) allRunModes
 
-renderRunGitMode :: RunGitMode -> String
-renderRunGitMode = \case
+renderRunMode :: RunMode -> String
+renderRunMode = \case
   Mode_Check -> "check"
   Mode_Fix -> "fix"
   Mode_FixAdd -> "fix-add"
