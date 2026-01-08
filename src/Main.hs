@@ -184,7 +184,7 @@ data Args_Install = Args_Install
 
 instance IsCLIArgs Args_Install where
   cliArgsParse = do
-    mode <- parseRunMode
+    mode <- parseRunModeCLI
     pure Args_Install{..}
   cliArgsRun args git (configFile, _) = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
@@ -239,7 +239,7 @@ data Args_RunGit = Args_RunGit
 
 instance IsCLIArgs Args_RunGit where
   cliArgsParse = do
-    mode <- parseRunMode
+    mode <- parseRunModeCLI
     pure Args_RunGit{..}
   cliArgsRun args git (_, config) = do
     files <- pure []
@@ -372,17 +372,18 @@ allRunModes =
   , Mode_FixAdd
   ]
 
-parseRunMode :: Opt.Parser RunMode
-parseRunMode = do
+parseRunModeCLI :: Opt.Parser RunMode
+parseRunModeCLI = do
   let modes = uncommas $ map renderRunMode allRunModes
       uncommas = Text.unpack . Text.intercalate ", " . map Text.pack
   fmap (fromMaybe Mode_Check) . Opt.optional $
-    Opt.option (Opt.maybeReader parse) . mconcat $
+    Opt.option (Opt.maybeReader parseRunMode) . mconcat $
       [ Opt.long "mode"
       , Opt.help $ "Mode to run hooky in during git hooks. One of: " <> modes
       ]
- where
-  parse s = listToMaybe $ filter ((== s) . renderRunMode) allRunModes
+
+parseRunMode :: String -> Maybe RunMode
+parseRunMode s = listToMaybe $ filter ((== s) . renderRunMode) allRunModes
 
 renderRunMode :: RunMode -> String
 renderRunMode = \case
