@@ -25,9 +25,12 @@ Download the appropriate binary from the GitHub release.
     * Manually runs the given hooks in `check` mode
     * Files may be specified as `@foo.txt`, where `foo.txt` contains one file per line.
     * Shortcuts:
-        * `--modified` = `@<(git diff --name-only)`
-        * `--staged` = `@<(git diff --staged --name-only)`
-        * `--all` = `@<(git ls-files)`
+        * `--modified`/`-m` = `@<(git diff --name-only --diff-filter=AMR)`
+        * `--staged`/`-s` = `@<(git diff --staged --name-only --diff-filter=AMR)`
+        * `--all`/`-a` = `@<(git ls-files)`
+        * `--prev`/`-1` = `@<(git diff HEAD~1..HEAD --name-only --diff-filter=AMR)`
+    * `--stash` stashes all unstaged changes before running
+    * If no files are specified, equivalent to `--stash --staged`
 
 * `hooky fix hook1 hook2 -- [FILES ...]`
     * Same as `hooky run`, except runs in `fix` mode

@@ -36,7 +36,7 @@ library
     , scientific
     , text
     , unliftio
-  default-language: GHC2021
+  default-language: GHC2024
   ghc-options: -Wall -Wcompat
 
 executable hooky
@@ -51,7 +51,7 @@ executable hooky
     , process
     , text
     , unliftio
-  default-language: GHC2021
+  default-language: GHC2024
   ghc-options: -Wall -Wcompat
 
 test-suite hooky-tests
@@ -73,5 +73,5 @@ test-suite hooky-tests
     , temporary
     , text
     , unliftio
-  default-language: GHC2021
+  default-language: GHC2024
   ghc-options: -Wall -Wcompat

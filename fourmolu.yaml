@@ -1,1 +1,3 @@
 indentation: 2
+haddock-style: single-line
+haddock-style-module: multi-line-compact

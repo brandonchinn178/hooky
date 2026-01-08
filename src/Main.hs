@@ -116,7 +116,7 @@ loadCLIOptions =
     Opt.command name $
       Opt.info (mkAction argsType <$> cliArgsParse) $
         Opt.progDesc description
-  mkAction :: IsCLIArgs args => Proxy args -> args -> CLICommandAction
+  mkAction :: (IsCLIArgs args) => Proxy args -> args -> CLICommandAction
   mkAction _ args git config = do
     args' <- resolveFiles args
     cliArgsRun args' git config

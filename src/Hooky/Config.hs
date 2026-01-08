@@ -146,9 +146,8 @@ instance KDL.DecodeValue PassFilesMode where
 
 {----- Glob -----}
 
-{- | TODO: make proper data type
-(isNegate, [Left isStarStar, Right lit])
--}
+-- | TODO: make proper data type
+-- (isNegate, [Left isStarStar, Right lit])
 newtype Glob = Glob (Bool, [Either Bool String])
   deriving (Eq)
 
