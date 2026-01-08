@@ -61,21 +61,26 @@ type CLICommandAction =
   IO ()
 
 data CLICommandDef
-  = forall args.
-  (IsCLIArgs args) =>
+  = forall cmd.
+  (IsCLICommand cmd) =>
   CLICommandDef
   { name :: String
   , description :: String
-  , argsType :: Proxy args
+  , cmdType :: Proxy cmd
   }
 
-class IsCLIArgs args where
-  cliArgsParse :: Opt.Parser args
+class IsCLICommand cmd where
+  cliCommandParse :: Opt.Parser cmd
 
-  cliArgsRun :: args -> CLICommandAction
+  cliCommandRun :: cmd -> CLICommandAction
 
-  cliArgsFiles :: Maybe (args -> [FilePath], [FilePath] -> args -> args)
-  cliArgsFiles = Nothing
+  cliCommandFiles :: Maybe (cmd -> [FilePath], [FilePath] -> cmd -> cmd)
+  cliCommandFiles = Nothing
+
+mkAction :: (IsCLICommand cmd) => Proxy cmd -> cmd -> CLICommandAction
+mkAction _ cmd git config = do
+  cmd' <- resolveFiles cmd
+  cliCommandRun cmd' git config
 
 loadCLIOptions :: IO CLIOptions
 loadCLIOptions =
@@ -114,12 +119,8 @@ loadCLIOptions =
 
   mkCommand CLICommandDef{..} =
     Opt.command name $
-      Opt.info (mkAction argsType <$> cliArgsParse) $
+      Opt.info (mkAction cmdType <$> cliCommandParse) $
         Opt.progDesc description
-  mkAction :: (IsCLIArgs args) => Proxy args -> args -> CLICommandAction
-  mkAction _ args git config = do
-    args' <- resolveFiles args
-    cliArgsRun args' git config
 
 {----- Entrypoint -----}
 
@@ -142,13 +143,13 @@ main = handleErrors $ do
   cli.run git (configFile, config)
 
 -- | Resolve any `@files` arguments specified as arguments
-resolveFiles :: (IsCLIArgs args) => args -> IO args
-resolveFiles args =
-  case cliArgsFiles of
-    Nothing -> pure args
+resolveFiles :: (IsCLICommand cmd) => cmd -> IO cmd
+resolveFiles cmd =
+  case cliCommandFiles of
+    Nothing -> pure cmd
     Just (getFiles, setFiles) -> do
-      files' <- resolve (getFiles args)
-      pure $ setFiles files' args
+      files' <- resolve (getFiles cmd)
+      pure $ setFiles files' cmd
  where
   resolve = fmap concat . mapM resolveFile
   resolveFile = \case
@@ -175,18 +176,18 @@ cmdInstall =
   CLICommandDef
     { name = "install"
     , description = "Install hooky as the git pre-commit hook"
-    , argsType = Proxy @Args_Install
+    , cmdType = Proxy @Cmd_Install
     }
 
-data Args_Install = Args_Install
+data Cmd_Install = Cmd_Install
   { mode :: RunMode
   }
 
-instance IsCLIArgs Args_Install where
-  cliArgsParse = do
+instance IsCLICommand Cmd_Install where
+  cliCommandParse = do
     mode <- parseRunModeCLI
-    pure Args_Install{..}
-  cliArgsRun args git (configFile, _) = do
+    pure Cmd_Install{..}
+  cliCommandRun cmd git (configFile, _) = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
@@ -199,7 +200,7 @@ instance IsCLIArgs Args_Install where
           , "--config"
           , quote . Text.pack $ configFile
           , "--mode"
-          , quote . Text.pack $ renderRunMode args.mode
+          , quote . Text.pack $ renderRunMode cmd.mode
           ]
       ]
     makeExecutable hookFile
@@ -230,27 +231,27 @@ cmdRunGit =
   CLICommandDef
     { name = "__git"
     , description = "Run as a git hook"
-    , argsType = Proxy @Args_RunGit
+    , cmdType = Proxy @Cmd_RunGit
     }
 
-data Args_RunGit = Args_RunGit
+data Cmd_RunGit = Cmd_RunGit
   { mode :: RunMode
   }
 
-instance IsCLIArgs Args_RunGit where
-  cliArgsParse = do
+instance IsCLICommand Cmd_RunGit where
+  cliCommandParse = do
     mode <- parseRunModeCLI
-    pure Args_RunGit{..}
-  cliArgsRun args git (_, config) = do
+    pure Cmd_RunGit{..}
+  cliCommandRun cmd git (_, config) = do
     files <- pure []
     runHooks git config shouldFix files
-    case args.mode of
+    case cmd.mode of
       Mode_FixAdd -> do
         pure () -- TODO: add modified files
       _ -> pure ()
    where
     shouldFix =
-      case args.mode of
+      case cmd.mode of
         Mode_Check -> Shouldn't #fix
         Mode_Fix
         Mode_FixAdd -> Should #fix
@@ -262,22 +263,22 @@ cmdRun =
   CLICommandDef
     { name = "run"
     , description = "Run hooks"
-    , argsType = Proxy @Args_Run
+    , cmdType = Proxy @Cmd_Run
     }
 
-data Args_Run = Args_Run
+data Cmd_Run = Cmd_Run
   { files :: [FilePath]
   }
 
-instance IsCLIArgs Args_Run where
-  cliArgsParse = do
+instance IsCLICommand Cmd_Run where
+  cliCommandParse = do
     files <- pure []
-    pure Args_Run{..}
+    pure Cmd_Run{..}
 
-  cliArgsRun args git (_, config) = do
-    runHooks git config (Shouldn't #fix) args.files
+  cliCommandRun cmd git (_, config) = do
+    runHooks git config (Shouldn't #fix) cmd.files
 
-  cliArgsFiles = Just ((.files), \files' Args_Run{} -> Args_Run{files = files', ..})
+  cliCommandFiles = Just ((.files), \files' Cmd_Run{} -> Cmd_Run{files = files', ..})
 
 runHooks :: GitClient -> Config -> Choice "fix" -> [FilePath] -> IO ()
 runHooks _ _ shouldFix _ = do
@@ -301,22 +302,22 @@ cmdFix =
   CLICommandDef
     { name = "fix"
     , description = "Run hooks with autofixing enabled"
-    , argsType = Proxy @Args_Fix
+    , cmdType = Proxy @Cmd_Fix
     }
 
-data Args_Fix = Args_Fix
+data Cmd_Fix = Cmd_Fix
   { files :: [FilePath]
   }
 
-instance IsCLIArgs Args_Fix where
-  cliArgsParse = do
+instance IsCLICommand Cmd_Fix where
+  cliCommandParse = do
     files <- pure []
-    pure Args_Fix{..}
+    pure Cmd_Fix{..}
 
-  cliArgsRun args git (_, config) = do
-    runHooks git config (Should #fix) args.files
+  cliCommandRun cmd git (_, config) = do
+    runHooks git config (Should #fix) cmd.files
 
-  cliArgsFiles = Just ((.files), \files' Args_Fix{} -> Args_Fix{files = files', ..})
+  cliCommandFiles = Just ((.files), \files' Cmd_Fix{} -> Cmd_Fix{files = files', ..})
 
 {----- hooky lint ------}
 
@@ -325,16 +326,16 @@ cmdLint =
   CLICommandDef
     { name = "lint"
     , description = "Run builtin hooky lint rules"
-    , argsType = Proxy @Args_Lint
+    , cmdType = Proxy @Cmd_Lint
     }
 
-data Args_Lint = Args_Lint
+data Cmd_Lint = Cmd_Lint
   { files :: [FilePath]
   , autofix :: Bool
   }
 
-instance IsCLIArgs Args_Lint where
-  cliArgsParse = do
+instance IsCLICommand Cmd_Lint where
+  cliCommandParse = do
     files <-
       Opt.some . Opt.argument Opt.str . mconcat $
         [ Opt.metavar "FILES"
@@ -344,21 +345,21 @@ instance IsCLIArgs Args_Lint where
         [ Opt.long "fix"
         , Opt.help "Whether to fix issues"
         ]
-    pure Args_Lint{..}
+    pure Cmd_Lint{..}
 
-  cliArgsRun args git (_, config) = do
-    report <- runLintRules git lintConfig args.files
+  cliCommandRun cmd git (_, config) = do
+    report <- runLintRules git lintConfig cmd.files
     Text.putStrLn $ renderLintReport report
     unless (lintReportSuccess report) $ do
       exitFailure
    where
     lintConfig =
       LintRunConfig
-        { autofix = args.autofix
+        { autofix = cmd.autofix
         , rules = config.lintRules
         }
 
-  cliArgsFiles = Just ((.files), \files' Args_Lint{..} -> Args_Lint{files = files', ..})
+  cliCommandFiles = Just ((.files), \files' Cmd_Lint{..} -> Cmd_Lint{files = files', ..})
 
 {----- RunMode -----}
 
