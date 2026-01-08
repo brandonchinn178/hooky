@@ -48,9 +48,15 @@ instance HasField "exec" GitClient ([String] -> IO ()) where
   getField git args = void . fromEitherM $ git.run args
 instance HasField "query" GitClient ([String] -> IO Text) where
   getField git args = fromEitherM $ git.run args
+
 instance HasField "getPath" GitClient (FilePath -> IO Text) where
   getField git path = git.query ["rev-parse", "--git-path", path]
-instance HasField "getFiles" GitClient (IO [FilePath]) where
-  getField git = split <$> git.query ["ls-files", "-z"]
+
+instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
+  getField git args = split <$> git.query (args <> ["-z"])
    where
-    split = map Text.unpack . Text.splitOn (Text.pack "\0") . Text.dropWhileEnd (== '\0')
+    split = map Text.unpack . filter (not . Text.null) . Text.splitOn (Text.pack "\0")
+instance HasField "getFiles" GitClient (IO [FilePath]) where
+  getField git = git.getFilesWith ["ls-files"]
+instance HasField "getChangedFiles" GitClient ([String] -> IO [FilePath]) where
+  getField git args = git.getFilesWith $ ["diff", "--name-only", "--diff-filter=AMR"] <> args

@@ -17,5 +17,5 @@ instance Exception HookyError where
 abort :: Text -> IO a
 abort = throwIO . HookyError
 
-abortImpure :: Text -> IO a
+abortImpure :: Text -> a
 abortImpure = impureThrow . HookyError

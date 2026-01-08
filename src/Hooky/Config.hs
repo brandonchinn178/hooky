@@ -26,15 +26,15 @@ module Hooky.Config (
 import Control.Arrow (returnA)
 import Data.Bifunctor qualified as Bifunctor
 import Data.List (partition, tails)
-import Data.Map (Map)
-import Data.Map qualified as Map
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
 import Data.Text qualified as Text
 import KDL.Arrow qualified as KDL
 
 data Config = Config
   { files :: [Glob]
-  , hooks :: Map Text HookConfig
+  , hooks :: [HookConfig]
   , lintRules :: [LintRule]
   }
   deriving (Show, Eq)
@@ -44,15 +44,13 @@ parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
   decoder = KDL.document $ proc () -> do
     files <- KDL.argsAt "files" -< ()
-    hooks <- fmap toHookMap $ KDL.many $ KDL.node "hook" -< ()
+    hooks <- KDL.many $ KDL.node "hook" -< ()
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
     returnA -< Config{..}
 
-  toHookMap = Map.fromList . map (\config -> (config.name, config))
-
 data HookConfig = HookConfig
   { name :: Text
-  , cmdArgs :: [Text]
+  , cmdArgs :: NonEmpty Text
   , checkArgs :: [Text]
   , fixArgs :: [Text]
   , passFiles :: PassFilesMode
@@ -68,7 +66,7 @@ instance KDL.DecodeNode HookConfig where
     returnA -< finalize name files
    where
     commandDecoder = proc () -> do
-      cmdArgs <- KDL.some KDL.arg -< ()
+      cmdArgs <- NonEmpty.fromList <$> KDL.some KDL.arg -< ()
       checkArgs <- KDL.children $ KDL.argsAt "check_args" -< ()
       fixArgs <- KDL.children $ KDL.argsAt "fix_args" -< ()
       passFiles <- KDL.children $ KDL.option PassFiles_XArgs $ KDL.argAt "pass_files" -< ()

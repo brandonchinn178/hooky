@@ -26,9 +26,11 @@ library
     Hooky.Config
     Hooky.Error
     Hooky.Lint
+    Hooky.Run
     Hooky.Utils.Git
   build-depends:
       base < 5
+    , bytestring
     , containers
     , directory
     , kdl-hs >= 0.2.0
@@ -43,7 +45,6 @@ executable hooky
   main-is: src/Main.hs
   build-depends:
       base
-    , choice
     , directory
     , filepath
     , hooky
