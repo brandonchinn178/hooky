@@ -82,12 +82,7 @@ runAllFilesLintRules ::
   [(LintRule, LintAction)] ->
   IO (Map (Maybe FilePath) [(Text, LintResult)])
 runAllFilesLintRules git allLinters = do
-  stdout <- git.query ["ls-files", "-z"]
-  let files =
-        Set.fromList $
-          map Text.unpack . Text.splitOn "\0" . Text.dropWhileEnd (== '\0') $
-            stdout
-
+  files <- Set.fromList <$> git.getFiles
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
     results <- run git files
     pure [(Just fp, [(lintRuleName rule, result)]) | (fp, result) <- results]

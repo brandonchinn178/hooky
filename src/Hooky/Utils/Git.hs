@@ -50,3 +50,7 @@ instance HasField "query" GitClient ([String] -> IO Text) where
   getField git args = fromEitherM $ git.run args
 instance HasField "getPath" GitClient (FilePath -> IO Text) where
   getField git path = git.query ["rev-parse", "--git-path", path]
+instance HasField "getFiles" GitClient (IO [FilePath]) where
+  getField git = split <$> git.query ["ls-files", "-z"]
+   where
+    split = map Text.unpack . Text.splitOn (Text.pack "\0") . Text.dropWhileEnd (== '\0')
