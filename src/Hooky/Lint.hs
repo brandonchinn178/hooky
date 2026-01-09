@@ -37,7 +37,7 @@ import Hooky.Config (
   LintRule (..),
   LintRuleRule (..),
   lintRuleName,
-  matchesGlob,
+  matchesGlobs,
   toGlob,
  )
 import Hooky.Utils.Git (GitClient)
@@ -268,7 +268,7 @@ lint_NoCommitToBranch :: [Glob] -> LintAction
 lint_NoCommitToBranch branches = LintActionNoFile $ \git -> do
   branch <- git.query ["branch", "--show-current"]
   pure $
-    if any (`matchesGlob` branch) branches
+    if matchesGlobs branches branch
       then LintFailed $ "cannot commit to branch: " <> branch
       else LintSuccess
 

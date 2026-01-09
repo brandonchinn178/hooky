@@ -18,13 +18,14 @@ module Hooky.Config (
   -- * Glob
   Glob (..),
   matchesGlob,
+  matchesGlobs,
   toGlob,
   renderGlob,
 ) where
 
 import Control.Arrow (returnA)
 import Data.Bifunctor qualified as Bifunctor
-import Data.List (tails)
+import Data.List (partition, tails)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -163,20 +164,24 @@ toGlob = Glob . parse0 . Text.unpack
 
   parse1 = \case
     '/' : cs -> parse2 cs
-    cs -> Left True : parse2 cs
+    cs -> Left True : dropLeading (Left True) (parse2 cs)
 
   parse2 = \case
-    '*' : '*' : cs -> Left True : parse2 cs
+    '*' : '*' : cs -> Left True : parse2 (dropLeading '/' cs)
     '*' : cs -> Left False : parse2 cs
     -- TODO: collapse all consecutive Rights
     c : cs -> Right [c] : parse2 cs
     [] -> []
 
+  dropLeading x = \case
+    a : as | a == x -> as
+    as -> as
+
 renderGlob :: Glob -> Text
 renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap go parts
  where
   go = \case
-    Left True -> "**"
+    Left True -> "**/"
     Left False -> "*"
     Right s -> Text.pack s
 
@@ -192,6 +197,16 @@ matchesGlob (Glob (isNegate, parts)) = (if isNegate then not else id) . go parts
   wildcardFile fp =
     let (pre, post) = Text.breakOn "/" fp
      in map (<> post) $ Text.tails pre
+
+matchesGlobs :: [Glob] -> Text -> Bool
+matchesGlobs globs s =
+  and
+    [ null posGlobs || any matches posGlobs
+    , null negGlobs || all matches negGlobs
+    ]
+ where
+  matches = (`matchesGlob` s)
+  (negGlobs, posGlobs) = partition (\(Glob (x, _)) -> x) globs
 
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]
