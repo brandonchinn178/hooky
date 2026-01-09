@@ -18,7 +18,7 @@ module Hooky.Run (
   renderRunMode,
 ) where
 
-import Control.Monad (forM_, unless)
+import Control.Monad (forM_, unless, when)
 import Data.ByteString.Lazy qualified as ByteStringL
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -67,7 +67,7 @@ runHooks git config options = do
         Mode_FixAdd -> do
           mapM run hooks <* stageModified
     printSummary results
-    unless (all ((== HookPassed) . snd) results) $ do
+    when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
   withStash = id -- FIXME
