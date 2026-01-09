@@ -9,8 +9,7 @@ hook hooky {
 }
 
 hook fourmolu {
-    // FIXME: dotslash
-    command "fourmolu" {
+    command "tools/fourmolu" {
         check_args -m check
         fix_args -m inplace
     }
