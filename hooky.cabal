@@ -28,9 +28,13 @@ library
     Hooky.Lint
     Hooky.Run
     Hooky.Utils.Git
+    Hooky.Utils.Process
+    Hooky.Utils.Term
   build-depends:
       base < 5
+    , ansi-terminal
     , bytestring
+    , concurrent-output
     , containers
     , directory
     , kdl-hs >= 0.2.0

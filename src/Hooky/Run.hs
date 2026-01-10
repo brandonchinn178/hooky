@@ -18,22 +18,38 @@ module Hooky.Run (
   renderRunMode,
 ) where
 
-import Control.Monad (forM_, unless, when)
-import Data.ByteString.Lazy qualified as ByteStringL
+import Control.Concurrent (threadDelay)
+import Control.Monad (forM_, when)
+import Data.Char (isSpace)
+import Data.Foldable qualified as Seq (toList)
+import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (listToMaybe)
+import Data.Sequence qualified as Seq
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Text.IO qualified as Text
+import Data.Text.Lazy qualified as Lazy
+import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy.IO qualified as TextL
 import GHC.Records (HasField (..))
 import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Utils.Git (GitClient)
+import Hooky.Utils.Process (runStreamedProcess)
+import Hooky.Utils.Term qualified as Term
+import System.Console.Regions (
+  ConsoleRegion,
+  displayConsoleRegions,
+  finishConsoleRegion,
+  setConsoleRegion,
+  withConsoleRegion,
+ )
+import System.Console.Regions qualified as Region (RegionLayout (..))
 import System.Exit (ExitCode (..), exitFailure)
 import System.IO qualified as IO
-import UnliftIO.Process qualified as Process
+import UnliftIO.Async (pooledMapConcurrentlyN, withAsync)
 import UnliftIO.Temporary (withSystemTempFile)
 
 {----- runHooks -----}
@@ -57,34 +73,100 @@ runHooks git config options = do
   (if options.stash then withStash else id) $ do
     files <- resolveTargets git options.fileTargets
     let hooks = map (resolveHook config options files) config.hooks
-    results <-
-      case options.mode of
-        Mode_Check -> do
-          -- FIXME: run in parallel, stream output
-          mapM run hooks <* checkModified
-        Mode_Fix -> do
-          mapM run hooks <* checkModified
-        Mode_FixAdd -> do
-          mapM run hooks <* stageModified
+    results <- runHookCmds hooks options.mode
     printSummary results
     when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
   withStash = id -- FIXME
+
+runHookCmds :: [HookCmd] -> RunMode -> IO [(Text, HookResult)]
+runHookCmds hooks mode =
+  displayConsoleRegions $ do
+    result <- pooledMapConcurrentlyN maxHooks run hooks
+    case mode of
+      Mode_Check
+      Mode_Fix -> checkModified
+      Mode_FixAdd -> stageModified
+    pure result
+ where
+  -- TODO: make configurable
+  maxParallelHooks = 5
+  maxOutputLines = 5
+
+  maxHooks =
+    case mode of
+      Mode_Check -> maxParallelHooks
+      Mode_Fix
+      Mode_FixAdd -> 1
+
   checkModified = pure () -- FIXME: error if files modified
   stageModified = pure () -- FIXME: stage modified files
-  run hook = do
-    Text.putStrLn $ "Running: " <> hook.name
-    (out_r, out_w) <- Process.createPipe
-    result <- runHook hook out_w
-    case result of
-      HookFailed -> do
-        Text.putStrLn $ hook.name <> ": FAIL"
-        Text.putStrLn $ Text.replicate 80 "-"
-        ByteStringL.hGetContents out_r >>= ByteStringL.putStr
-        Text.putStrLn $ Text.replicate 80 "-"
-      _ -> pure ()
-    pure (hook.name, result)
+  run hook =
+    withConsoleRegion Region.Linear $ \headerRegion ->
+      withConsoleRegion (Region.InLine headerRegion) $ \outputRegion ->
+        withAsync (renderHeader headerRegion hook.name) $ \_ -> do
+          outputRef <- newIORef ([], Seq.empty)
+          let onOutputLine line = do
+                progressLines <-
+                  atomicModifyIORef outputRef $ \(prev, buf) ->
+                    let buf' = (if Seq.length buf == maxOutputLines then Seq.drop 1 buf else buf) Seq.|> line
+                     in ((line : prev, buf'), Seq.toList buf')
+                setConsoleRegion outputRegion $ renderSectionBody progressLines
+
+          onOutputLine $ "═══▶ Running: " <> (renderShell . NonEmpty.toList) hook.args
+          result <- runHook hook onOutputLine
+          case result of
+            HookFailed -> do
+              let header = renderHookStatus hook.name (Term.redBG "FAIL")
+              output <- renderSectionBody . reverse . fst <$> readIORef outputRef
+              finishConsoleRegion headerRegion header
+              finishConsoleRegion outputRegion $ TextL.stripEnd output
+            _ -> pure ()
+          pure (hook.name, result)
+
+  renderShell args =
+    Text.intercalate " " $
+      [ if Text.any isSpace s then "'" <> s <> "'" else s
+      | s <- args
+      ]
+
+renderHookStatus :: Text -> Lazy.Text -> Lazy.Text
+renderHookStatus name status =
+  TextL.concat
+    [ "╭─── "
+    , status
+    , " "
+    , Term.bold $ TextL.fromStrict name
+    , " "
+    ]
+
+renderSectionBody :: [Text] -> Lazy.Text
+renderSectionBody = TextL.unlines . map (("│ " <>) . TextL.fromStrict)
+
+renderHeader :: ConsoleRegion -> Text -> IO ()
+renderHeader region name = go 0
+ where
+  totalWidth = 6 :: Int
+  barWidth = 3 :: Int
+  animationFPS = 12 :: Int
+
+  start = renderHookStatus name (Term.yellowBG "RUNNING")
+
+  go t = do
+    setConsoleRegion region . TextL.concat $
+      [ start
+      , "["
+      , TextL.pack $ map (getBarChar t) [0 .. totalWidth - 1]
+      , "]\n"
+      ]
+    threadDelay (1000000 `div` animationFPS)
+    go (t + 1)
+
+  getBarChar t i =
+    if any (== i) . map (`mod` totalWidth) . map (t +) $ [0 .. barWidth - 1]
+      then '='
+      else ' '
 
 {----- HookCmd -----}
 
@@ -110,16 +192,16 @@ resolveHook config options files hookConfig =
  where
   isIncluded fp = matchesGlobs (config.files <> hookConfig.files) (Text.pack fp)
 
-runHook :: HookCmd -> IO.Handle -> IO HookResult
-runHook hook outHandle = do
+runHook :: HookCmd -> (Text -> IO ()) -> IO HookResult
+runHook hook onOutput = do
   if null hook.files
     then pure HookSkipped
     else do
       code <-
         case hook.passFiles of
           PassFiles_None -> run hook.args
-          PassFiles_XArgs -> xargs []
-          PassFiles_XArgsParallel -> xargs ["-P0"]
+          PassFiles_XArgs -> runXargs hook.args
+          PassFiles_XArgsParallel -> runXargs $ "-P0" NonEmpty.<| hook.args
           PassFiles_File ->
             withSystemTempFile ("hooky." <> Text.unpack hook.name <> ".XXXXX") $ \fp h -> do
               mapM_ (IO.hPutStrLn h) hook.files
@@ -130,27 +212,13 @@ runHook hook outHandle = do
           ExitSuccess -> HookPassed
           ExitFailure _ -> HookFailed
  where
-  run (cmd NonEmpty.:| args) = runWithInput cmd args $ \_ -> pure ()
-  xargs xargsArgs =
-    runWithInput "xargs" (["-0"] <> xargsArgs <> NonEmpty.toList hook.args) $ \h ->
+  run (cmd NonEmpty.:| args) =
+    runStreamedProcess cmd args onOutput $ \_ -> pure ()
+  runXargs args =
+    runStreamedProcess "xargs" (["-0"] <> NonEmpty.toList args) onOutput $ \h ->
       forM_ hook.files $ \fp -> do
         IO.hPutStr h fp
         IO.hPutChar h '\0'
-
-  runWithInput cmd args populateStdin = do
-    (stdin_r, stdin_w) <- Process.createPipe
-    Process.withCreateProcess
-      (Process.proc (Text.unpack cmd) (map Text.unpack args))
-        { Process.std_in = Process.UseHandle stdin_r
-        , Process.std_out = Process.UseHandle outHandle
-        , Process.std_err = Process.UseHandle outHandle
-        , Process.close_fds = True
-        }
-      ( \_ _ _ h -> do
-          populateStdin stdin_w :: IO ()
-          IO.hClose stdin_w
-          Process.waitForProcess h
-      )
 
 {----- HookResult -----}
 
@@ -158,16 +226,22 @@ data HookResult = HookPassed | HookFailed | HookSkipped
   deriving (Show, Eq)
 
 printSummary :: [(Text, HookResult)] -> IO ()
-printSummary results = do
-  unless (null $ passed <> failed) $ do
-    Text.putStrLn $ Text.replicate 80 "-"
-  unless (null passed) $ do
-    Text.putStrLn $ "Passed: " <> Text.intercalate ", " passed
-  unless (null failed) $ do
-    Text.putStrLn $ "Failed: " <> Text.intercalate ", " failed
+printSummary results
+  | null results = pure ()
+  | otherwise = do
+      TextL.putStrLn ""
+      render HookPassed ("passed " <> Term.green "✔")
+      render HookFailed ("failed " <> Term.red "✘")
+      render HookSkipped ("skipped " <> Term.yellow "≫")
  where
-  passed = [hook | (hook, HookPassed) <- results]
-  failed = [hook | (hook, HookFailed) <- results]
+  render status label = do
+    let count = length $ filter ((== status) . snd) results
+    when (count > 0) $ do
+      TextL.putStrLn . TextL.unwords $
+        [ TextL.pack $ show count
+        , if count == 1 then "hook" else "hooks"
+        , label
+        ]
 
 {----- FileTargets -----}
 
