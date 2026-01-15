@@ -282,7 +282,7 @@ data Cmd_Run = Cmd_Run
 instance IsCLICommand Cmd_Run where
   cliCommandParse = do
     mFileTargets <-
-      Opt.optional . cliOneOf $
+      cliOneOfOptional $
         [ FilesGiven <$> parseFilesCLI
         , Opt.flag' FilesModified . mconcat $
             [ Opt.long "modified"
@@ -397,12 +397,13 @@ instance IsCLICommand Cmd_Lint where
 {----- CLI Helpers -----}
 
 -- https://github.com/pcapriotti/optparse-applicative/issues/513
-cliOneOf :: [Opt.Parser a] -> Opt.Parser a
-cliOneOf parsers = validate <$> traverse Opt.optional parsers
+cliOneOfOptional :: [Opt.Parser a] -> Opt.Parser (Maybe a)
+cliOneOfOptional parsers = validate <$> traverse Opt.optional parsers
  where
   validate results =
     case catMaybes results of
-      [a] -> a
+      [] -> Nothing
+      [a] -> Just a
       _ -> abortImpure $ "Expected exactly one of: " <> (Text.intercalate ", " . map Text.pack) optNames
 
   optNames = concatMap getOptNames parsers

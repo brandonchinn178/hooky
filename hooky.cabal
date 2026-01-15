@@ -63,18 +63,23 @@ executable hooky
 test-suite hooky-tests
   type: exitcode-stdio-1.0
   ghc-options: -F -pgmF=skeletest-preprocessor
-  build-tool-depends: skeletest:skeletest-preprocessor
+  build-tool-depends:
+    , skeletest:skeletest-preprocessor
+    , hooky:hooky
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
     Hooky.ConfigSpec
+    Hooky.E2ESpec
     Hooky.LintSpec
     Hooky.TestUtils.Git
+    Hooky.TestUtils.Hooky
   build-depends:
       base
     , directory
     , filepath
     , hooky
+    , process
     , skeletest >= 0.3.0
     , temporary
     , text
