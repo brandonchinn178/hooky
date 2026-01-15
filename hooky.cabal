@@ -28,6 +28,7 @@ library
     Hooky.Lint
     Hooky.Run
     Hooky.Internal.Output
+    Hooky.Internal.Temp
     Hooky.Utils.Git
     Hooky.Utils.Process
     Hooky.Utils.Term
@@ -38,10 +39,12 @@ library
     , concurrent-output
     , containers
     , directory
+    , filepath
     , kdl-hs >= 0.2.0
     , process
     , scientific
     , text
+    , time
     , unliftio
   default-language: GHC2024
   ghc-options: -Wall -Wcompat

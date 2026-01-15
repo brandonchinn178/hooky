@@ -26,7 +26,7 @@ initGitClient = do
   repo <- fromEitherM $ runGit ["rev-parse", "--show-toplevel"]
   pure
     GitClient
-      { repo = Text.unpack repo
+      { repo = Text.unpack $ Text.strip repo
       }
 
 runGit :: [String] -> IO (Either HookyError Text)
@@ -34,8 +34,7 @@ runGit args = do
   (code, stdout, stderr) <- readProcessWithExitCode "git" args ""
   pure $
     case code of
-      ExitSuccess ->
-        Right $ (Text.strip . Text.pack) stdout
+      ExitSuccess -> Right $ Text.pack stdout
       ExitFailure n ->
         Left . HookyError . Text.unlines $
           [ Text.pack $ "command exited with code " <> show n <> ": " <> show ("git" : args)
@@ -47,12 +46,14 @@ instance HasField "run" GitClient ([String] -> IO (Either HookyError Text)) wher
 instance HasField "exec" GitClient ([String] -> IO ()) where
   getField git args = void . fromEitherM $ git.run args
 instance HasField "query" GitClient ([String] -> IO Text) where
-  getField git args = fromEitherM $ git.run args
+  getField git args = fmap Text.strip . fromEitherM $ git.run args
 
 instance HasField "getPath" GitClient (FilePath -> IO Text) where
   getField git path = git.query ["rev-parse", "--git-path", path]
 instance HasField "getDiff" GitClient (IO Text) where
   getField git = git.query ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules"]
+instance HasField "clearChanges" GitClient (IO ()) where
+  getField git = git.exec ["checkout", "--no-recurse-submodules", "--", "."]
 
 instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
   getField git args = split <$> git.query (args <> ["-z"])

@@ -37,7 +37,7 @@ hookyRunArgsSpec cmd = do
       writeFile "bad1.txt" "bad"
       writeFile "bad2.txt" "bad\n"
       git.exec ["add", ".hooky.kdl", "good.txt", "bad2.txt"]
-      -- writeFile "bad2.txt" "bad" -- FIXME: when --stash is implemented
+      writeFile "bad2.txt" "bad"
       (code, stdout, stderr) <- readProcessWithExitCode hooky [cmd] ""
       context (unlines [stdout, stderr]) $
         code `shouldBe` ExitSuccess

@@ -41,7 +41,7 @@ red :: TextWrapper
 red = wrapSGR [SetColor Foreground Vivid ANSI.Red]
 
 yellow :: TextWrapper
-yellow = wrapSGR [SetColor Foreground Vivid ANSI.Yellow]
+yellow = wrapSGR [SetColor Foreground Dull ANSI.Yellow]
 
 redBG :: TextWrapper
 redBG = wrapSGR [SetColor Background Dull ANSI.Red]

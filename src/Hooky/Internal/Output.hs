@@ -1,11 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hooky.Internal.Output (
+  -- * Render shell command
   renderShell,
+
+  -- * Outputs for running hooks
   renderHookStatus,
   renderHookBody,
   renderHookHeader,
+
+  -- * Hooky messages
   renderLogLines,
+  outputLogLines,
 ) where
 
 import Data.Char (isSpace)
@@ -13,6 +19,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Lazy qualified as Lazy
 import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy.IO qualified as TextL
 import Hooky.Utils.Term qualified as Term
 
 renderShell :: [Text] -> Lazy.Text
@@ -60,3 +67,6 @@ renderLogLines = map Term.yellow . onHead ("═══▶ " <>)
   onHead f = \case
     [] -> []
     x : xs -> f x : xs
+
+outputLogLines :: Lazy.Text -> IO ()
+outputLogLines = TextL.putStr . TextL.unlines . renderLogLines . TextL.lines

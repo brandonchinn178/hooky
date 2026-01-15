@@ -28,20 +28,25 @@ import Data.Map qualified as Map
 import Data.Sequence qualified as Seq
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import Data.Text.Lazy qualified as Lazy
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
+import Data.Time qualified as Time
 import GHC.Records (HasField (..))
 import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
+import Hooky.Error (HookyError)
 import Hooky.Internal.Output (
+  outputLogLines,
   renderHookBody,
   renderHookHeader,
   renderHookStatus,
   renderLogLines,
   renderShell,
  )
+import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Process (runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
@@ -54,8 +59,11 @@ import System.Console.Regions (
  )
 import System.Console.Regions qualified as Region (RegionLayout (..))
 import System.Exit (ExitCode (..), exitFailure)
+import System.FilePath ((</>))
 import System.IO qualified as IO
+import System.Process (getCurrentPid)
 import UnliftIO.Async (pooledMapConcurrentlyN, withAsync)
+import UnliftIO.Exception (bracket, fromEitherM, try)
 import UnliftIO.Temporary (withSystemTempFile)
 
 {----- runHooks -----}
@@ -76,7 +84,7 @@ instance HasField "autofix" RunOptions Bool where
 
 runHooks :: GitClient -> Config -> RunOptions -> IO ()
 runHooks git config options = do
-  (if options.stash then withStash else id) $ do
+  (if options.stash then withStash git options.mode else id) $ do
     files <- resolveTargets git options.fileTargets
     let hooks = map (resolveHook config options files) config.hooks
     let checkDiffs = initDiffChecker git options.mode
@@ -85,13 +93,70 @@ runHooks git config options = do
     when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
-  withStash = id -- FIXME
   maxParallelHooks = 5 -- TODO: make configurable
   maxHooks =
     case options.mode of
       Mode_Check -> maxParallelHooks
       Mode_Fix
       Mode_FixAdd -> 1
+
+withStash :: GitClient -> RunMode -> IO a -> IO a
+withStash git mode = bracket save restore . const
+ where
+  save = do
+    tree <- git.query ["write-tree"]
+    diff <-
+      fromEitherM . git.run $
+        [ "diff-index"
+        , "--ignore-submodules"
+        , "--binary"
+        , "--no-color"
+        , "--no-ext-diff"
+        , Text.unpack tree
+        , "--"
+        ]
+    if Text.null diff
+      then do
+        pure Nothing
+      else do
+        pid <- getCurrentPid
+        date <- Time.formatTime Time.defaultTimeLocale "%Y%m%d" <$> Time.getCurrentTime
+        let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
+        Text.writeFile stashFile diff
+        outputLogLines $ "Stashed changes to: " <> TextL.pack stashFile
+        -- FIXME: remove intent-to-add
+        git.clearChanges
+        pure $ Just stashFile
+  restore = \case
+    Nothing -> pure ()
+    Just stashFile -> do
+      let runGitApply =
+            git.exec . concat $
+              [ ["apply", "--whitespace=nowarn", stashFile]
+              , case mode of
+                  Mode_FixAdd -> ["--3way"]
+                  _ -> ["--quiet"]
+              ]
+      try runGitApply >>= \case
+        Right _ -> do
+          outputLogLines $ "Restored changes from: " <> TextL.pack stashFile
+        Left (_ :: HookyError) -> do
+          case mode of
+            Mode_Check
+            Mode_Fix -> do
+                outputLogLines . TextL.unlines $
+                  [ "Stashed changes conflicted with hook modifications."
+                  , "Run `hooky fix` manually and `git add` the desired changes."
+                  , "Rolling back changes for now..."
+                  ]
+                git.clearChanges
+                runGitApply
+                pure () -- no need to explicitly fail, since hooks should have failed
+            Mode_FixAdd -> do
+              outputLogLines . TextL.unlines $
+                [ "Stashed changes conflicted with fixed changes."
+                , "Fix conflicts after git finishes the commit."
+                ]
 
 runHookCmds :: DiffChecker -> Int -> [HookCmd] -> IO [(Text, HookResult)]
 runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run

@@ -22,7 +22,7 @@ import Data.Text.Lazy.IO qualified as TextL
 import Data.Typeable (typeOf, typeRep)
 import Hooky.Config (Config (..), parseConfig)
 import Hooky.Error (abort, abortImpure)
-import Hooky.Internal.Output (renderLogLines)
+import Hooky.Internal.Output (outputLogLines)
 import Hooky.Lint (
   LintRunConfig (..),
   lintReportSuccess,
@@ -232,7 +232,7 @@ instance IsCLICommand Cmd_Install where
       when exists $ do
         let backup = fp <> ".bak"
         renameFile fp backup
-        TextL.putStr . TextL.unlines . renderLogLines $
+        outputLogLines . TextL.unlines $
           [ "Found previously installed pre-commit hooks."
           , "Backed up to: " <> TextL.pack backup
           ]
