@@ -25,7 +25,7 @@ import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (listToMaybe)
+import Data.Map qualified as Map
 import Data.Sequence qualified as Seq
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -264,17 +264,15 @@ resolveTargets git = \case
 {----- RunMode -----}
 
 data RunMode = Mode_Check | Mode_Fix | Mode_FixAdd
-  deriving (Show, Eq)
+  deriving (Show, Eq, Enum, Bounded)
 
 allRunModes :: [RunMode]
-allRunModes =
-  [ Mode_Check
-  , Mode_Fix
-  , Mode_FixAdd
-  ]
+allRunModes = [minBound .. maxBound]
 
 parseRunMode :: String -> Maybe RunMode
-parseRunMode s = listToMaybe $ filter ((== s) . renderRunMode) allRunModes
+parseRunMode = flip Map.lookup x
+ where
+  x = Map.fromList [(renderRunMode m, m) | m <- allRunModes]
 
 renderRunMode :: RunMode -> String
 renderRunMode = \case
