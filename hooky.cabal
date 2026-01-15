@@ -27,6 +27,7 @@ library
     Hooky.Error
     Hooky.Lint
     Hooky.Run
+    Hooky.Internal.Output
     Hooky.Utils.Git
     Hooky.Utils.Process
     Hooky.Utils.Term

@@ -20,7 +20,6 @@ module Hooky.Run (
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_, when)
-import Data.Char (isSpace)
 import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
@@ -36,6 +35,13 @@ import GHC.Records (HasField (..))
 import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
+import Hooky.Internal.Output (
+  renderHookBody,
+  renderHookHeader,
+  renderHookStatus,
+  renderLogLines,
+  renderShell,
+ )
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Process (runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
@@ -94,62 +100,28 @@ runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN
   run hook =
     withConsoleRegion Region.Linear $ \headerRegion ->
       withConsoleRegion (Region.InLine headerRegion) $ \outputRegion ->
-        withAsync (renderHeader headerRegion hook.name) $ \_ -> do
+        withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
           hookOutput <- initHookOutput maxOutputLines $ \buf ->
-            setConsoleRegion outputRegion $ renderSectionBody buf
+            setConsoleRegion outputRegion $ renderHookBody buf
           hookOutput.log ["Running: " <> (renderShell . NonEmpty.toList) hook.args]
           result <- runHook checkDiffs hookOutput hook
           case result of
             HookFailed -> do
               let header = renderHookStatus hook.name (Term.redBG "FAIL")
-              output <- renderSectionBody <$> hookOutput.getLines
+              output <- renderHookBody <$> hookOutput.getLines
               finishConsoleRegion headerRegion header
               finishConsoleRegion outputRegion $ TextL.stripEnd output
             _ -> pure ()
           pure (hook.name, result)
 
-  renderShell args =
-    TextL.intercalate " " $
-      [ TextL.fromStrict $ if Text.any isSpace s then "'" <> s <> "'" else s
-      | s <- args
-      ]
-
-renderHookStatus :: Text -> Lazy.Text -> Lazy.Text
-renderHookStatus name status =
-  TextL.concat
-    [ "╭─── "
-    , status
-    , " "
-    , Term.bold $ TextL.fromStrict name
-    , " "
-    ]
-
-renderSectionBody :: [Lazy.Text] -> Lazy.Text
-renderSectionBody = TextL.unlines . map ("│ " <>)
-
-renderHeader :: ConsoleRegion -> Text -> IO ()
-renderHeader region name = go 0
+renderHookHeaderAnimated :: ConsoleRegion -> Text -> IO ()
+renderHookHeaderAnimated region name = go 0
  where
-  totalWidth = 6 :: Int
-  barWidth = 3 :: Int
   animationFPS = 12 :: Int
-
-  start = renderHookStatus name (Term.yellowBG "RUNNING")
-
   go t = do
-    setConsoleRegion region . TextL.concat $
-      [ start
-      , "["
-      , TextL.pack $ map (getBarChar t) [0 .. totalWidth - 1]
-      , "]\n"
-      ]
+    setConsoleRegion region $ renderHookHeader name t
     threadDelay (1000000 `div` animationFPS)
     go (t + 1)
-
-  getBarChar t i =
-    if any (== i) . map (`mod` totalWidth) . map (t +) $ [0 .. barWidth - 1]
-      then '='
-      else ' '
 
 {----- HookCmd -----}
 
@@ -286,13 +258,9 @@ initHookOutput maxOutputLines renderBuf = do
   pure
     HookOutput
       { onLine = onLine . TextL.fromStrict
-      , log = mapM_ onLine . map Term.yellow . onHead ("═══▶ " <>)
+      , log = mapM_ onLine . renderLogLines
       , getLines = reverse . fst <$> readIORef outputRef
       }
- where
-  onHead f = \case
-    [] -> []
-    x : xs -> f x : xs
 
 {----- DiffChecker -----}
 

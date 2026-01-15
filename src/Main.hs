@@ -17,9 +17,12 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy.IO qualified as TextL
 import Data.Typeable (typeOf, typeRep)
 import Hooky.Config (Config (..), parseConfig)
 import Hooky.Error (abort, abortImpure)
+import Hooky.Internal.Output (renderLogLines)
 import Hooky.Lint (
   LintRunConfig (..),
   lintReportSuccess,
@@ -36,6 +39,7 @@ import Hooky.Run (
   runHooks,
  )
 import Hooky.Utils.Git (GitClient (..), initGitClient)
+import Hooky.Utils.Term qualified as Term
 import Options.Applicative qualified as Opt
 import Options.Applicative.Types qualified as Opt.Internal
 import System.Directory (
@@ -215,7 +219,7 @@ instance IsCLICommand Cmd_Install where
       ]
     makeExecutable hookFile
 
-    Text.putStrLn $ "Hooky installed at: " <> Text.pack hookFile
+    TextL.putStrLn . Term.green $ "🚀 Hooky installed at: " <> TextL.pack hookFile
    where
     quote s = "'" <> s <> "'"
     makeExecutable fp = do
@@ -228,11 +232,10 @@ instance IsCLICommand Cmd_Install where
       when exists $ do
         let backup = fp <> ".bak"
         renameFile fp backup
-        let border = Text.replicate 50 "*"
-        Text.putStrLn border
-        Text.putStrLn "Found previously installed pre-commit hooks."
-        Text.putStrLn $ "Backed up to: " <> Text.pack backup
-        Text.putStrLn border
+        TextL.putStr . TextL.unlines . renderLogLines $
+          [ "Found previously installed pre-commit hooks."
+          , "Backed up to: " <> TextL.pack backup
+          ]
 
 {----- hooky __git -----}
 
