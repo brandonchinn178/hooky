@@ -73,61 +73,44 @@ runHooks git config options = do
   (if options.stash then withStash else id) $ do
     files <- resolveTargets git options.fileTargets
     let hooks = map (resolveHook config options files) config.hooks
-    results <- runHookCmds hooks options.mode
+    let checkDiffs = initDiffChecker git options.mode
+    results <- runHookCmds checkDiffs maxHooks hooks
     printSummary results
     when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
   withStash = id -- FIXME
-
-runHookCmds :: [HookCmd] -> RunMode -> IO [(Text, HookResult)]
-runHookCmds hooks mode =
-  displayConsoleRegions $ do
-    result <- pooledMapConcurrentlyN maxHooks run hooks
-    case mode of
-      Mode_Check
-      Mode_Fix -> checkModified
-      Mode_FixAdd -> stageModified
-    pure result
- where
-  -- TODO: make configurable
-  maxParallelHooks = 5
-  maxOutputLines = 5
-
+  maxParallelHooks = 5 -- TODO: make configurable
   maxHooks =
-    case mode of
+    case options.mode of
       Mode_Check -> maxParallelHooks
       Mode_Fix
       Mode_FixAdd -> 1
 
-  checkModified = pure () -- FIXME: error if files modified
-  stageModified = pure () -- FIXME: stage modified files
+runHookCmds :: DiffChecker -> Int -> [HookCmd] -> IO [(Text, HookResult)]
+runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
+ where
+  maxOutputLines = 5 -- TODO: make configurable
   run hook =
     withConsoleRegion Region.Linear $ \headerRegion ->
       withConsoleRegion (Region.InLine headerRegion) $ \outputRegion ->
         withAsync (renderHeader headerRegion hook.name) $ \_ -> do
-          outputRef <- newIORef ([], Seq.empty)
-          let onOutputLine line = do
-                progressLines <-
-                  atomicModifyIORef outputRef $ \(prev, buf) ->
-                    let buf' = (if Seq.length buf == maxOutputLines then Seq.drop 1 buf else buf) Seq.|> line
-                     in ((line : prev, buf'), Seq.toList buf')
-                setConsoleRegion outputRegion $ renderSectionBody progressLines
-
-          onOutputLine $ "═══▶ Running: " <> (renderShell . NonEmpty.toList) hook.args
-          result <- runHook hook onOutputLine
+          hookOutput <- initHookOutput maxOutputLines $ \buf ->
+            setConsoleRegion outputRegion $ renderSectionBody buf
+          hookOutput.log ["Running: " <> (renderShell . NonEmpty.toList) hook.args]
+          result <- runHook checkDiffs hookOutput hook
           case result of
             HookFailed -> do
               let header = renderHookStatus hook.name (Term.redBG "FAIL")
-              output <- renderSectionBody . reverse . fst <$> readIORef outputRef
+              output <- renderSectionBody <$> hookOutput.getLines
               finishConsoleRegion headerRegion header
               finishConsoleRegion outputRegion $ TextL.stripEnd output
             _ -> pure ()
           pure (hook.name, result)
 
   renderShell args =
-    Text.intercalate " " $
-      [ if Text.any isSpace s then "'" <> s <> "'" else s
+    TextL.intercalate " " $
+      [ TextL.fromStrict $ if Text.any isSpace s then "'" <> s <> "'" else s
       | s <- args
       ]
 
@@ -141,8 +124,8 @@ renderHookStatus name status =
     , " "
     ]
 
-renderSectionBody :: [Text] -> Lazy.Text
-renderSectionBody = TextL.unlines . map (("│ " <>) . TextL.fromStrict)
+renderSectionBody :: [Lazy.Text] -> Lazy.Text
+renderSectionBody = TextL.unlines . map ("│ " <>)
 
 renderHeader :: ConsoleRegion -> Text -> IO ()
 renderHeader region name = go 0
@@ -192,11 +175,11 @@ resolveHook config options files hookConfig =
  where
   isIncluded fp = matchesGlobs (config.files <> hookConfig.files) (Text.pack fp)
 
-runHook :: HookCmd -> (Text -> IO ()) -> IO HookResult
-runHook hook onOutput = do
+runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
+runHook checkDiffs hookOutput hook = do
   if null hook.files
     then pure HookSkipped
-    else do
+    else checkDiffs hookOutput $ do
       code <-
         case hook.passFiles of
           PassFiles_None -> run hook.args
@@ -213,9 +196,9 @@ runHook hook onOutput = do
           ExitFailure _ -> HookFailed
  where
   run (cmd NonEmpty.:| args) =
-    runStreamedProcess cmd args onOutput $ \_ -> pure ()
+    runStreamedProcess cmd args hookOutput.onLine $ \_ -> pure ()
   runXargs args =
-    runStreamedProcess "xargs" (["-0"] <> NonEmpty.toList args) onOutput $ \h ->
+    runStreamedProcess "xargs" (["-0"] <> NonEmpty.toList args) hookOutput.onLine $ \h ->
       forM_ hook.files $ \fp -> do
         IO.hPutStr h fp
         IO.hPutChar h '\0'
@@ -282,3 +265,62 @@ renderRunMode = \case
   Mode_Check -> "check"
   Mode_Fix -> "fix"
   Mode_FixAdd -> "fix-add"
+
+{----- HookOutput -----}
+
+data HookOutput = HookOutput
+  { onLine :: Text -> IO ()
+  , log :: [Lazy.Text] -> IO ()
+  , getLines :: IO [Lazy.Text]
+  }
+
+initHookOutput :: Int -> ([Lazy.Text] -> IO ()) -> IO HookOutput
+initHookOutput maxOutputLines renderBuf = do
+  outputRef <- newIORef ([], Seq.empty)
+  let onLine line = do
+        progressLines <-
+          atomicModifyIORef outputRef $ \(prev, buf) ->
+            let buf' = (if Seq.length buf == maxOutputLines then Seq.drop 1 buf else buf) Seq.|> line
+             in ((line : prev, buf'), Seq.toList buf')
+        renderBuf progressLines
+  pure
+    HookOutput
+      { onLine = onLine . TextL.fromStrict
+      , log = mapM_ onLine . map Term.yellow . onHead ("═══▶ " <>)
+      , getLines = reverse . fst <$> readIORef outputRef
+      }
+ where
+  onHead f = \case
+    [] -> []
+    x : xs -> f x : xs
+
+{----- DiffChecker -----}
+
+type DiffChecker = HookOutput -> IO HookResult -> IO HookResult
+
+initDiffChecker :: GitClient -> RunMode -> DiffChecker
+initDiffChecker git mode = \hookOutput action -> do
+  before <- git.getDiff
+  result <- action
+  after <- git.getDiff
+  case mode of
+    _ | before == after -> do
+      pure result
+    Mode_Check -> do
+      hookOutput.log
+        [ "Files were unexpectedly modified."
+        , "Running hooks with --mode=check should NOT modify files, since hooks are run in"
+        , "parallel. Fix the commands in the hooky config to only modify files with"
+        , "`fix_args`."
+        ]
+      pure HookFailed
+    Mode_Fix -> do
+      hookOutput.log
+        [ "Files were modified."
+        , "Run `git add` to stage the changes."
+        ]
+      pure HookFailed
+    Mode_FixAdd -> do
+      modifiedFiles <- git.getChangedFiles []
+      git.exec ("add" : modifiedFiles)
+      pure result

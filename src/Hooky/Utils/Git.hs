@@ -51,6 +51,8 @@ instance HasField "query" GitClient ([String] -> IO Text) where
 
 instance HasField "getPath" GitClient (FilePath -> IO Text) where
   getField git path = git.query ["rev-parse", "--git-path", path]
+instance HasField "getDiff" GitClient (IO Text) where
+  getField git = git.query ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules"]
 
 instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
   getField git args = split <$> git.query (args <> ["-z"])
