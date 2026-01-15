@@ -229,7 +229,10 @@ printSummary :: [(Text, HookResult)] -> IO ()
 printSummary results
   | null results = pure ()
   | otherwise = do
-      TextL.putStrLn ""
+      -- TODO: Assumes there's only output if there are failed hooks
+      -- Change after https://github.com/brandonchinn178/hooky/issues/7
+      when (length (filter ((== HookFailed) . snd) results) > 0) $ do
+        TextL.putStrLn ""
       render HookPassed ("passed " <> Term.green "✔")
       render HookFailed ("failed " <> Term.red "✘")
       render HookSkipped ("skipped " <> Term.yellow "≫")

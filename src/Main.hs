@@ -257,7 +257,7 @@ instance IsCLICommand Cmd_RunGit where
       RunOptions
         { mode = cmd.mode
         , fileTargets = FilesStaged
-        , showStdoutOnSuccess = False -- FIXME
+        , showStdoutOnSuccess = False -- TODO: https://github.com/brandonchinn178/hooky/issues/7
         , stash = True
         }
 
@@ -328,7 +328,7 @@ toRunOptions mode cmd =
   RunOptions
     { mode = mode
     , fileTargets = cmd.fileTargets
-    , showStdoutOnSuccess = False -- FIXME
+    , showStdoutOnSuccess = False -- TODO: https://github.com/brandonchinn178/hooky/issues/7
     , stash = cmd.stash
     }
 

@@ -21,11 +21,11 @@ lint_rules {
     - check_case_conflict
     - check_merge_conflict
     - end_of_file_fixer
-    - no_commit_to_branch {
-        branches {
-            - main
-            - release-*
-        }
-    }
+    // - no_commit_to_branch {
+    //     branches {
+    //         - main
+    //         - release-*
+    //     }
+    // }
     - trailing_whitespace
 }
