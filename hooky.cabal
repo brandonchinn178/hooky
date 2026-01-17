@@ -51,6 +51,8 @@ library
 
 executable hooky
   main-is: src/Main.hs
+  other-modules:
+    Paths_hooky
   build-depends:
       base
     , directory

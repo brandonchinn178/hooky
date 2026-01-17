@@ -10,7 +10,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-import Control.Applicative ((<|>))
+import Control.Applicative ((<**>), (<|>))
 import Control.Monad (guard, unless, when)
 import Data.Coerce (coerce)
 import Data.Maybe (catMaybes, fromMaybe)
@@ -20,6 +20,7 @@ import Data.Text.IO qualified as Text
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Data.Typeable (typeOf, typeRep)
+import Data.Version (showVersion)
 import Hooky.Config (Config (..), parseConfig)
 import Hooky.Error (abort, abortImpure)
 import Hooky.Internal.Output (outputLogLines)
@@ -42,6 +43,7 @@ import Hooky.Utils.Git (GitClient (..), initGitClient)
 import Hooky.Utils.Term qualified as Term
 import Options.Applicative qualified as Opt
 import Options.Applicative.Types qualified as Opt.Internal
+import Paths_hooky qualified
 import System.Directory (
   doesFileExist,
   getPermissions,
@@ -93,7 +95,7 @@ mkAction _ cmd git config = do
 loadCLIOptions :: IO CLIOptions
 loadCLIOptions =
   Opt.customExecParser prefs $
-    Opt.info (Opt.helper <*> parseOptions) . mconcat $
+    Opt.info (parseOptions <**> Opt.helper <**> version) . mconcat $
       [ Opt.fullDesc
       , Opt.header "Hooky: A minimal git hooks manager"
       ]
@@ -101,6 +103,11 @@ loadCLIOptions =
   prefs =
     Opt.prefs . mconcat $
       [ Opt.subparserInline
+      ]
+  version =
+    Opt.infoOption (showVersion Paths_hooky.version) . mconcat $
+      [ Opt.long "version"
+      , Opt.help "Print version of hooky"
       ]
   parseOptions = do
     run <- parseInternalCommand <|> parseCommand
