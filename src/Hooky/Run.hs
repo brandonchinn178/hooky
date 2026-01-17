@@ -57,12 +57,19 @@ import System.Console.Regions (
   withConsoleRegion,
  )
 import System.Console.Regions qualified as Region (RegionLayout (..))
+import System.Directory (findExecutable)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
 import System.IO qualified as IO
 import System.Process (getCurrentPid)
 import UnliftIO.Async (pooledMapConcurrentlyN, withAsync)
-import UnliftIO.Exception (bracket, fromEitherM, try)
+import UnliftIO.Exception (
+  bracket,
+  catchAny,
+  displayException,
+  fromEitherM,
+  try,
+ )
 import UnliftIO.Temporary (withSystemTempFile)
 
 {----- runHooks -----}
@@ -264,12 +271,25 @@ runHook checkDiffs hookOutput hook = do
           ExitFailure _ -> HookFailed
  where
   run (cmd NonEmpty.:| args) =
-    runStreamedProcess cmd args hookOutput.onLine $ \_ -> pure ()
+    runProc cmd args $ \_ -> pure ()
   runXargs args =
-    runStreamedProcess "xargs" (["-0"] <> NonEmpty.toList args) hookOutput.onLine $ \h ->
+    runProc "xargs" (["-0"] <> NonEmpty.toList args) $ \h ->
       forM_ hook.files $ \fp -> do
         IO.hPutStr h fp
         IO.hPutChar h '\0'
+  runProc cmd args populateStdin =
+    runStreamedProcess cmd args hookOutput.onLine populateStdin `catchAny` \e -> do
+      -- See if it failed due to executable not being found
+      let hookCmd = NonEmpty.head hook.args
+      findExecutable (Text.unpack hookCmd) >>= \case
+        Just _ -> pure ()
+        Nothing -> abort $ "Executable does not exist: " <> hookCmd
+
+      -- If the exception is unrecognized, just dump it to output
+      abort . Text.unlines $
+        [ "Failed to execute command: " <> renderShell (NonEmpty.toList hook.args)
+        , Text.pack $ displayException e
+        ]
 
 {----- HookResult -----}
 
