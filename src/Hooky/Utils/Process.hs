@@ -2,6 +2,7 @@
 
 module Hooky.Utils.Process (
   renderShell,
+  runProcessWith,
   runStreamedProcess,
 ) where
 
@@ -10,8 +11,9 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Error (HookyError (..))
-import System.Exit (ExitCode)
+import System.Exit (ExitCode (..))
 import System.IO qualified as IO
+import System.Process (CreateProcess)
 import System.Process qualified as Process
 
 renderShell :: [Text] -> Text
@@ -20,6 +22,22 @@ renderShell args =
     [ if Text.any isSpace s then "'" <> s <> "'" else s
     | s <- args
     ]
+
+runProcessWith ::
+  (CreateProcess -> CreateProcess) ->
+  FilePath ->
+  [String] ->
+  IO (Either HookyError Text)
+runProcessWith f cmd args = do
+  (code, stdout, stderr) <- Process.readCreateProcessWithExitCode (f $ Process.proc cmd args) ""
+  pure $
+    case code of
+      ExitSuccess -> Right $ Text.pack stdout
+      ExitFailure n ->
+        Left . HookyError . Text.unlines $
+          [ Text.pack $ "command exited with code " <> show n <> ": " <> show (cmd : args)
+          , Text.pack stderr
+          ]
 
 runStreamedProcess ::
   Text ->
