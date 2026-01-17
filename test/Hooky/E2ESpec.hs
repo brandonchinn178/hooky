@@ -71,6 +71,16 @@ hookyRunSpec cmd = do
       runHooky [cmd, "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
       checkUntracked
 
+  it "error if .hooky.kdl is to be stashed" $ do
+    withGitRepo $ \git -> do
+      writeFile ".hooky.kdl" hookyConfigEofFixer
+      git.exec ["add", ".hooky.kdl"]
+      git.exec ["commit", "-m", "test"]
+      writeFile ".hooky.kdl" $ hookyConfigEofFixer <> "\n\n\n"
+      (code, _, stderr) <- readHooky [cmd, "--stash", "--staged"]
+      code `shouldBe` ExitFailure 1
+      stderr `shouldBe` "hooky: .hooky.kdl has changes, stage it first\n"
+
 runHooky :: [String] -> IO ExitCode
 runHooky args = do
   HookyExe hooky <- getFixture

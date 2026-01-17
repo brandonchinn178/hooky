@@ -37,7 +37,7 @@ import GHC.Records (HasField (..))
 import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
-import Hooky.Error (HookyError)
+import Hooky.Error (HookyError, abort)
 import Hooky.Internal.Output (
   outputLogLines,
   renderHookBody,
@@ -124,7 +124,14 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
     -- Get intent-to-add files
     itaFiles <- git.getFilesWith ["diff", "--name-only", "--diff-filter=A"]
 
+    -- Get a phantom commit that includes staged files
     tree <- git.query ["write-tree"]
+
+    -- Check if .hooky.kdl is to be staged
+    configDiff <- git.query ["diff-index", Text.unpack tree, "--", ".hooky.kdl"]
+    unless (Text.null configDiff) $ do
+      abort ".hooky.kdl has changes, stage it first"
+
     diff <-
       fromEitherM . git.run $
         [ "diff-index"
@@ -139,7 +146,6 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
       then do
         pure Nothing
       else do
-        -- FIXME: error if .hooky.kdl is unstaged
         pid <- getCurrentPid
         date <- Time.formatTime Time.defaultTimeLocale "%Y%m%d" <$> Time.getCurrentTime
         let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
