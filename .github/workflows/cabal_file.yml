@@ -1,0 +1,20 @@
+name: Parse hooky.cabal
+on:
+  workflow_call:
+    outputs:
+      version:
+        value: ${{ jobs.cabal_file.outputs.version }}
+
+jobs:
+  cabal_file:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        uses: actions/checkout@v6
+      -
+        uses: haskell-actions/parse-cabal-file@v1
+        id: cabal_file
+        with:
+          cabal_file: hooky.cabal
+    outputs:
+      version: ${{ steps.cabal_file.outputs.version }}

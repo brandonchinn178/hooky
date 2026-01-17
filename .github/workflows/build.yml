@@ -1,0 +1,89 @@
+name: Build
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: 'The platforms to build for'
+        required: true
+        type: string
+      version:
+        description: 'The version of hooky'
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: ${{ fromJSON(inputs.platforms) }}
+
+    # https://github.com/actions/runner-images?tab=readme-ov-file#available-images
+    # https://github.blog/changelog/2025-01-16-linux-arm64-hosted-runners-now-available-for-free-in-public-repositories-public-preview/
+    runs-on:
+      ${{
+        (matrix.platform == 'linux-x86_64' && 'ubuntu-24.04') ||
+        (matrix.platform == 'linux-arm64' && 'ubuntu-24.04-arm') ||
+        (matrix.platform == 'darwin-x86_64' && 'macos-15-intel') ||
+        (matrix.platform == 'darwin-arm64' && 'macos-15') ||
+        null
+      }}
+    name: ${{ matrix.platform }}
+    env:
+      version: ${{ inputs.version }}
+      platform: ${{ matrix.platform }}
+    steps:
+      -
+        name: Verify platform
+        run: |
+          set -x
+          case ${{ runner.os }} in
+            (Linux) os=linux ;;
+            (macOS) os=osx ;;
+            (*) echo 'Unknown OS' >&1; exit 1 ;;
+          esac
+          case ${{ runner.arch }} in
+            (X64) arch=x86_64 ;;
+            (ARM64) arch=arm64 ;;
+            (*) echo 'Unknown architecture' >&1; exit 1 ;;
+          esac
+          if [[ $os-$arch != ${platform} ]]; then
+            echo "Incorrect platform: $os-$arch" >&2
+            exit 1
+          fi
+      -
+        uses: actions/checkout@v6
+      -
+        uses: haskell-actions/setup@v2
+        with:
+          enable-stack: true
+      -
+        uses: actions/cache@v5
+        with:
+          path: ~/.stack
+          key: ${{ matrix.platform }}-build-${{ hashFiles('stack.yaml', 'hooky.cabal') }}
+      -
+        name: Configure git for testing
+        run: |
+          git config set advice.defaultBranchName false
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+      -
+        name: Build binary
+        run: |
+          stack install :hooky --local-bin-path ./bin
+          strip bin/hooky
+          cp bin/hooky bin/hooky-${version}-${target}
+      -
+        name: Run tests
+        run: TEST_HOOKY_EXE=$PWD/bin/hooky stack build --test
+      -
+        name: Run hooky
+        run: |
+          curl -LSfs "https://github.com/facebook/dotslash/releases/latest/download/dotslash-ubuntu-22.04.$(uname -m).tar.gz" | tar fxz - -C /usr/local/bin/
+          PATH=$PWD/bin:$PATH hooky run --all
+      -
+        name: Store binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: hooky-binary-${{ matrix.platform }}
+          path: bin/hooky-*

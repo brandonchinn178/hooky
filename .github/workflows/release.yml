@@ -1,0 +1,71 @@
+name: Release
+on: workflow_dispatch
+
+jobs:
+  cabal_file:
+    uses: ./.github/workflows/cabal_file.yml
+
+  build:
+    needs:
+      - cabal_file
+    uses: ./.github/workflows/build.yml
+    with:
+      platforms: |
+        [
+          "linux-x86_64",
+          "linux-arm64",
+          "darwin-x86_64",
+          "darwin-arm64"
+        ]
+      version: ${{ needs.cabal_file.outputs.version }}
+
+  check_changelog:
+    needs:
+      - cabal_file
+    runs-on: ubuntu-latest
+    env:
+      version: ${{ needs.cabal_file.outputs.version }}
+    steps:
+      -
+        uses: actions/checkout@v6
+      -
+        name: Validate CHANGELOG
+        run:
+          scripts/release_notes.py validate-changelog
+            --release-version "${version}"
+
+  release:
+    needs:
+      - cabal_file
+      - build
+    runs-on: ubuntu-latest
+    env:
+      version: ${{ needs.cabal_file.outputs.version }}
+    steps:
+      -
+        uses: actions/checkout@v6
+      -
+        uses: actions/download-artifact@v7
+        with:
+          path: ./.release/bin/
+          name: hooky-binary-*
+          merge-multiple: true
+      -
+        name: Generate release notes
+        run:
+          scripts/release_notes.py generate
+            --release-version "${version}"
+            --bin linux-x86_64 .release/bin/hooky-${version}-linux-x86_64
+            --bin linux-aarch64 .release/bin/hooky-${version}-linux-arm64
+            --bin macos-x86_64 .release/bin/hooky-${version}-darwin-x86_64
+            --bin macos-aarch64 .release/bin/hooky-${version}-darwin-arm64
+            | tee .release/release-notes.md
+      -
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.version }}
+          body_path: .release/release-notes.md
+          draft: true
+          target_commitish: ${{ github.sha }}
+          files: .release/bin/*
+          overwrite_files: false
