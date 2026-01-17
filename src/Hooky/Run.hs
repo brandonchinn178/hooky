@@ -44,11 +44,10 @@ import Hooky.Internal.Output (
   renderHookHeader,
   renderHookStatus,
   renderLogLines,
-  renderShell,
  )
 import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
-import Hooky.Utils.Process (runStreamedProcess)
+import Hooky.Utils.Process (renderShell, runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
 import System.Console.Regions (
   ConsoleRegion,
@@ -168,7 +167,7 @@ runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN
         withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
           hookOutput <- initHookOutput maxOutputLines $ \buf ->
             setConsoleRegion outputRegion $ renderHookBody buf
-          hookOutput.log ["Running: " <> (renderShell . NonEmpty.toList) hook.args]
+          hookOutput.log ["Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args]
           result <- runHook checkDiffs hookOutput hook
           case result of
             HookFailed -> do

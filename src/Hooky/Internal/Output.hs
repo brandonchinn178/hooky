@@ -1,9 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hooky.Internal.Output (
-  -- * Render shell command
-  renderShell,
-
   -- * Outputs for running hooks
   renderHookStatus,
   renderHookBody,
@@ -14,20 +11,11 @@ module Hooky.Internal.Output (
   outputLogLines,
 ) where
 
-import Data.Char (isSpace)
 import Data.Text (Text)
-import Data.Text qualified as Text
 import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Hooky.Utils.Term qualified as Term
-
-renderShell :: [Text] -> LazyText
-renderShell args =
-  TextL.intercalate " " $
-    [ TextL.fromStrict $ if Text.any isSpace s then "'" <> s <> "'" else s
-    | s <- args
-    ]
 
 renderHookStatus :: Text -> LazyText -> LazyText
 renderHookStatus name status =

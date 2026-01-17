@@ -1,13 +1,25 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Hooky.Utils.Process (
+  renderShell,
   runStreamedProcess,
 ) where
 
+import Data.Char (isSpace)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Hooky.Error (HookyError (..))
 import System.Exit (ExitCode)
 import System.IO qualified as IO
 import System.Process qualified as Process
+
+renderShell :: [Text] -> Text
+renderShell args =
+  Text.intercalate " " $
+    [ if Text.any isSpace s then "'" <> s <> "'" else s
+    | s <- args
+    ]
 
 runStreamedProcess ::
   Text ->
