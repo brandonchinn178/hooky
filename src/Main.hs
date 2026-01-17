@@ -53,7 +53,7 @@ import System.Directory qualified as Permissions (Permissions (..))
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
-import System.IO (hPutStrLn, stderr)
+import System.IO (stderr)
 import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
@@ -172,10 +172,9 @@ resolveFiles cmd =
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
-  hPutStrLn stderr $ "hooky: " <> strip (displayException e)
+  TextL.hPutStrLn stderr . Term.red $ (TextL.strip . TextL.pack . displayException) e
   exitFailure
  where
-  strip = Text.unpack . Text.strip . Text.pack
   shouldHandle (SomeException e) = do
     guard $ typeOf e `notElem` ignoredErrors
     Just (SomeException e)

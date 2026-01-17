@@ -5,6 +5,7 @@
 module Hooky.E2ESpec (spec) where
 
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.TestUtils.Git (withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
@@ -37,12 +38,12 @@ hookyRunSpec cmd = do
   it "errors if multiple file selection flags are passed" $ do
     (code, _, stderr) <- readHooky [cmd, "--all", "--modified"]
     code `shouldBe` ExitFailure 1
-    stderr `shouldBe` "hooky: Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
+    stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
 
   it "errors if file argument and flags are both passed" $ do
     (code, _, stderr) <- readHooky [cmd, "--all", "file.txt"]
     code `shouldBe` ExitFailure 1
-    stderr `shouldBe` "hooky: Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
+    stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
 
   it "stashes intent-to-add files" $ do
     withGitRepo $ \git -> do
@@ -79,7 +80,7 @@ hookyRunSpec cmd = do
       writeFile ".hooky.kdl" $ hookyConfigEofFixer <> "\n\n\n"
       (code, _, stderr) <- readHooky [cmd, "--stash", "--staged"]
       code `shouldBe` ExitFailure 1
-      stderr `shouldBe` "hooky: .hooky.kdl has changes, stage it first\n"
+      stderr `shouldBe` ".hooky.kdl has changes, stage it first\n"
 
 runHooky :: [String] -> IO ExitCode
 runHooky args = do
@@ -104,7 +105,12 @@ readHooky args = do
     stderr <- Text.hGetContents stderr_r
     Text.hPutStrLn IO.stdout stdout
     Text.hPutStrLn IO.stderr stderr
-    pure (code, stdout, stderr)
+    pure (code, stripControlChars stdout, stripControlChars stderr)
+ where
+  stripControlChars s =
+    case Text.breakOn "\x1b" s of
+      (_, "") -> s
+      (pre, post) -> pre <> stripControlChars (Text.drop 1 . Text.dropWhile (/= 'm') $ post)
 
 hookyConfigEofFixer :: String
 hookyConfigEofFixer =
