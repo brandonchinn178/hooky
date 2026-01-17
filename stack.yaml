@@ -1,0 +1,6 @@
+snapshot: nightly-2026-01-17
+compiler: ghc-9.12.2
+
+ghc-options:
+  "$everything": -O2
+  "$locals": -Werror
