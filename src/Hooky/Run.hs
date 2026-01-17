@@ -19,7 +19,7 @@ module Hooky.Run (
 ) where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad (forM_, when)
+import Control.Monad (forM_, unless, when)
 import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
@@ -100,9 +100,30 @@ runHooks git config options = do
       Mode_FixAdd -> 1
 
 withStash :: GitClient -> RunMode -> IO a -> IO a
-withStash git mode = bracket save restore . const
+withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save restore
  where
+  -- bracket where the result of 'before' is passed to 'after', but not the action
+  bracket' before after = bracket before after . const
+
+  -- Stash untracked files as well
+  -- Treat untracked files as intent-to-add files so they're included in the
+  -- stash, then unstage them afterwards
+  saveUntracked = do
+    untrackedFiles <- git.getFilesWith ["ls-files", "--others", "--exclude-standard"]
+    if null untrackedFiles
+      then pure Nothing
+      else do
+        git.exec $ ["add", "--intent-to-add", "--"] <> untrackedFiles
+        pure $ Just untrackedFiles
+  restoreUntracked = \case
+    Nothing -> pure ()
+    Just untrackedFiles -> do
+      git.exec $ ["rm", "--cached", "--"] <> untrackedFiles
+
   save = do
+    -- Get intent-to-add files
+    itaFiles <- git.getFilesWith ["diff", "--name-only", "--diff-filter=A"]
+
     tree <- git.query ["write-tree"]
     diff <-
       fromEitherM . git.run $
@@ -118,17 +139,19 @@ withStash git mode = bracket save restore . const
       then do
         pure Nothing
       else do
+        -- FIXME: error if .hooky.kdl is unstaged
         pid <- getCurrentPid
         date <- Time.formatTime Time.defaultTimeLocale "%Y%m%d" <$> Time.getCurrentTime
         let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
         Text.writeFile stashFile diff
         outputLogLines $ "Stashed changes to: " <> TextL.pack stashFile
-        -- FIXME: remove intent-to-add
+        unless (null itaFiles) $ do
+          git.exec $ ["rm", "--force", "--"] <> itaFiles -- Remove intent-to-add files; persisted in the diff
         git.clearChanges
-        pure $ Just stashFile
+        pure $ Just (stashFile, itaFiles)
   restore = \case
     Nothing -> pure ()
-    Just stashFile -> do
+    Just (stashFile, itaFiles) -> do
       let runGitApply =
             git.exec . concat $
               [ ["apply", "--whitespace=nowarn", stashFile]
@@ -156,6 +179,9 @@ withStash git mode = bracket save restore . const
                 [ "Stashed changes conflicted with fixed changes."
                 , "Fix conflicts after git finishes the commit."
                 ]
+      -- Re-apply intent-to-add state
+      unless (null itaFiles) $ do
+        git.exec $ ["add", "--intent-to-add", "--"] <> itaFiles
 
 runHookCmds :: DiffChecker -> Int -> [HookCmd] -> IO [(Text, HookResult)]
 runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
