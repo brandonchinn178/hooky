@@ -29,7 +29,7 @@ import Data.Sequence qualified as Seq
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
-import Data.Text.Lazy qualified as Lazy
+import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Data.Time qualified as Time
@@ -307,11 +307,11 @@ renderRunMode = \case
 
 data HookOutput = HookOutput
   { onLine :: Text -> IO ()
-  , log :: [Lazy.Text] -> IO ()
-  , getLines :: IO [Lazy.Text]
+  , log :: [LazyText] -> IO ()
+  , getLines :: IO [LazyText]
   }
 
-initHookOutput :: Int -> ([Lazy.Text] -> IO ()) -> IO HookOutput
+initHookOutput :: Int -> ([LazyText] -> IO ()) -> IO HookOutput
 initHookOutput maxOutputLines renderBuf = do
   outputRef <- newIORef ([], Seq.empty)
   let onLine line = do

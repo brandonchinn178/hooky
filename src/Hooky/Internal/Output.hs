@@ -17,19 +17,19 @@ module Hooky.Internal.Output (
 import Data.Char (isSpace)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Text.Lazy qualified as Lazy
+import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Hooky.Utils.Term qualified as Term
 
-renderShell :: [Text] -> Lazy.Text
+renderShell :: [Text] -> LazyText
 renderShell args =
   TextL.intercalate " " $
     [ TextL.fromStrict $ if Text.any isSpace s then "'" <> s <> "'" else s
     | s <- args
     ]
 
-renderHookStatus :: Text -> Lazy.Text -> Lazy.Text
+renderHookStatus :: Text -> LazyText -> LazyText
 renderHookStatus name status =
   TextL.concat
     [ "╭─── "
@@ -39,10 +39,10 @@ renderHookStatus name status =
     , " "
     ]
 
-renderHookBody :: [Lazy.Text] -> Lazy.Text
+renderHookBody :: [LazyText] -> LazyText
 renderHookBody = TextL.unlines . map ("│ " <>)
 
-renderHookHeader :: Text -> Int -> Lazy.Text
+renderHookHeader :: Text -> Int -> LazyText
 renderHookHeader name time =
   TextL.concat $
     [ start
@@ -61,12 +61,12 @@ renderHookHeader name time =
       then '='
       else ' '
 
-renderLogLines :: [Lazy.Text] -> [Lazy.Text]
+renderLogLines :: [LazyText] -> [LazyText]
 renderLogLines = map Term.yellow . onHead ("═══▶ " <>)
  where
   onHead f = \case
     [] -> []
     x : xs -> f x : xs
 
-outputLogLines :: Lazy.Text -> IO ()
+outputLogLines :: LazyText -> IO ()
 outputLogLines = TextL.putStr . TextL.unlines . renderLogLines . TextL.lines

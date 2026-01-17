@@ -8,7 +8,7 @@ module Hooky.Utils.Term (
   yellowBG,
 ) where
 
-import Data.Text.Lazy qualified as Lazy (Text)
+import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
 import System.Console.ANSI (
   ColorIntensity (..),
@@ -21,7 +21,7 @@ import System.Console.ANSI qualified as ANSI
 
 {----- Output -----}
 
-type TextWrapper = Lazy.Text -> Lazy.Text
+type TextWrapper = LazyText -> LazyText
 
 wrapSGR :: [SGR] -> TextWrapper
 wrapSGR codes s =
