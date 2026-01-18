@@ -26,6 +26,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
 import Data.Sequence qualified as Seq
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -35,7 +36,13 @@ import Data.Text.Lazy.IO qualified as TextL
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Time qualified as Time
 import GHC.Records (HasField (..))
-import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
+import Hooky.Config (
+  Config,
+  HookConfig,
+  PassFilesMode (..),
+  matchesGlobs,
+  skippedHooks,
+ )
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Error (HookyError, abort)
@@ -258,7 +265,7 @@ resolveHook config options files hookConfig =
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
-  if null hook.files
+  if null hook.files || hook.name `Set.member` skippedHooks
     then pure HookSkipped
     else checkDiffs hookOutput $ do
       code <-

@@ -112,6 +112,10 @@ Available rules and rule-specific configuration:
     * `branches` - Branches to prevent commits to, as a glob pattern
 * `trailing_whitespace` - Remove trailing whitespace
 
+### Skipping hooks
+
+To temporarily skip hooks, use the `SKIP` env var, which takes a comma-delimited list of hooks to skip. This works for both `hook`s and `lint_rules`.
+
 ## Comparison with other tools
 
 ### pre-commit
@@ -125,3 +129,7 @@ At the end of the day, git pre-commit hooks should just be a matter of taking co
 ### husky
 
 TODO: https://typicode.github.io/husky/#/
+
+### prek
+
+TODO: https://prek.j178.dev/

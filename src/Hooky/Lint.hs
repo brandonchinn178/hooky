@@ -36,8 +36,8 @@ import Hooky.Config (
   Glob,
   LintRule (..),
   LintRuleRule (..),
-  lintRuleName,
   matchesGlobs,
+  skippedHooks,
   toGlob,
  )
 import Hooky.Utils.Git (GitClient)
@@ -56,7 +56,11 @@ data LintRunConfig = LintRunConfig
 
 runLintRules :: GitClient -> LintRunConfig -> [FilePath] -> IO LintReport
 runLintRules git config files = do
-  let allLinters = map (\rule -> (rule, fromLintRule rule)) config.rules
+  let allLinters =
+        [ (rule, fromLintRule rule)
+        | rule <- config.rules
+        , rule.name `Set.notMember` skippedHooks
+        ]
   nonFileLintResults <- runNonFileLintRules git allLinters
   allFilesLintResults <- runAllFilesLintRules git allLinters
   fileLintResults <- mapM (runPerFileLintRules git config allLinters) files
@@ -73,7 +77,7 @@ runNonFileLintRules ::
 runNonFileLintRules git allLinters =
   forM linters $ \(rule, run) -> do
     result <- run git
-    pure (lintRuleName rule, result)
+    pure (rule.name, result)
  where
   linters = [(rule, run) | (rule, LintActionNoFile run) <- allLinters]
 
@@ -85,7 +89,7 @@ runAllFilesLintRules git allLinters = do
   files <- Set.fromList <$> git.getFiles
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
     results <- run git files
-    pure [(Just fp, [(lintRuleName rule, result)]) | (fp, result) <- results]
+    pure [(Just fp, [(rule.name, result)]) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
 
@@ -105,12 +109,11 @@ runPerFileLintRules git config allLinters file =
           ( \contents (rule, run) -> do
               -- TODO: check if file is valid for rule
               (result, contents') <- run git file contents
-              let name = lintRuleName rule
               pure $
                 if config.autofix
-                  then ((name, result), contents')
+                  then ((rule.name, result), contents')
                   -- TODO: show diff of fix failure
-                  else ((name, if result == LintFixed then LintFailed "file would be changed" else result), contents)
+                  else ((rule.name, if result == LintFixed then LintFailed "file would be changed" else result), contents)
           )
           contents1
           linters

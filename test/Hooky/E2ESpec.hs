@@ -58,6 +58,50 @@ spec = do
         code `shouldBe` ExitFailure 1
         scrubDuration stdout `shouldSatisfy` P.matchesSnapshot
 
+    describe "skipping hooks with env var" $ do
+      let runHookyWithEnv env args = do
+            HookyExe hooky <- getFixture
+            Process.withCreateProcess (Process.proc "env" $ [env, hooky] <> args) $ \_ _ _ h -> do
+              Process.waitForProcess h
+      it "skips entire hook" $ do
+        withGitRepo $ \git -> do
+          writeFile ".hooky.kdl" $
+            """
+            hook hooky1 {
+              command hooky lint
+              files *.good
+            }
+            hook hooky2 {
+              command hooky lint
+              files *.bad
+            }
+            lint_rules {
+              - end_of_file_fixer
+            }
+
+            """
+          writeFile "test.good" "test\n"
+          writeFile "test.bad" "test"
+          git.exec ["add", "."]
+          runHookyWithEnv "SKIP=hooky2" ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
+      it "skips hooky lint rules" $ do
+        withGitRepo $ \git -> do
+          writeFile ".hooky.kdl" $
+            """
+            hook hooky {
+              command hooky lint
+              files *
+            }
+            lint_rules {
+              - end_of_file_fixer
+            }
+
+            """
+          writeFile "test.txt" "test"
+          git.exec ["add", "."]
+          runHookyWithEnv "SKIP=end_of_file_fixer" ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
   describe "hooky fix" $ do
     hookyRunSpec "fix"
 

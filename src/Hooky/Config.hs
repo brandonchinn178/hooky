@@ -7,13 +7,13 @@
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Config (
+  -- * Config
   Config (..),
   parseConfig,
   HookConfig (..),
   PassFilesMode (..),
   LintRule (..),
   LintRuleRule (..),
-  lintRuleName,
 
   -- * Glob
   Glob (..),
@@ -21,6 +21,9 @@ module Hooky.Config (
   matchesGlobs,
   toGlob,
   renderGlob,
+
+  -- * Skipped hooks
+  skippedHooks,
 ) where
 
 import Control.Arrow (returnA)
@@ -28,9 +31,14 @@ import Data.Bifunctor qualified as Bifunctor
 import Data.List (partition, tails)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import GHC.Records (HasField (..))
 import KDL.Arrow qualified as KDL
+import System.Environment (lookupEnv)
+import System.IO.Unsafe (unsafePerformIO)
 
 data Config = Config
   { files :: [Glob]
@@ -89,16 +97,16 @@ data LintRuleRule
   | LintRule_TrailingWhitespace
   deriving (Show, Eq)
 
-lintRuleName :: LintRule -> Text
-lintRuleName LintRule{rule} =
-  case rule of
-    -- Must match lintRuleDecoder
-    LintRule_CheckBrokenSymlinks{} -> "check_broken_symlinks"
-    LintRule_CheckCaseConflict{} -> "check_case_conflict"
-    LintRule_CheckMergeConflict{} -> "check_merge_conflict"
-    LintRule_EndOfFileFixer{} -> "end_of_file_fixer"
-    LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
-    LintRule_TrailingWhitespace{} -> "trailing_whitespace"
+instance HasField "name" LintRule Text where
+  getField LintRule{rule} =
+    case rule of
+      -- Must match lintRuleDecoder
+      LintRule_CheckBrokenSymlinks{} -> "check_broken_symlinks"
+      LintRule_CheckCaseConflict{} -> "check_case_conflict"
+      LintRule_CheckMergeConflict{} -> "check_merge_conflict"
+      LintRule_EndOfFileFixer{} -> "end_of_file_fixer"
+      LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
+      LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
 instance KDL.DecodeNode LintRule where
   nodeDecoder = proc () -> do
@@ -209,3 +217,10 @@ matchesGlobs globs s =
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]
   valueDecoder = toGlob <$> KDL.text
+
+{----- Skipped hooks -----}
+
+skippedHooks :: Set Text
+skippedHooks = unsafePerformIO $ Set.fromList . maybe [] csv <$> lookupEnv "SKIP"
+ where
+  csv = Text.splitOn "," . Text.pack
