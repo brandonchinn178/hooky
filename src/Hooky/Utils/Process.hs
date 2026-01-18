@@ -48,6 +48,7 @@ runStreamedProcess ::
 runStreamedProcess cmd args onOutputLine populateStdin = do
   (stdin_r, stdin_w) <- Process.createPipe
   (stdout_r, stdout_w) <- Process.createPipe
+  IO.hSetEncoding stdout_r IO.utf8
   Process.withCreateProcess
     (Process.proc (Text.unpack cmd) (map Text.unpack args))
       { Process.std_in = Process.UseHandle stdin_r
