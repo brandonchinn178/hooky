@@ -80,7 +80,7 @@ jobs:
         name: Run hooky
         run: |
           curl -LSfs "https://github.com/facebook/dotslash/releases/latest/download/dotslash-ubuntu-22.04.$(uname -m).tar.gz" | tar fxz - -C /usr/local/bin/
-          PATH=$PWD/bin:$PATH hooky run --all
+          PATH=$PWD/bin:$PATH hooky run --all --format=verbose
       -
         name: Store binary
         uses: actions/upload-artifact@v6

@@ -1,4 +1,4 @@
-files !*.golden
+files !*.snap.md
 
 hook hooky {
     command hooky lint {

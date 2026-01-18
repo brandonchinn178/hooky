@@ -23,7 +23,13 @@ import Data.Typeable (typeOf, typeRep)
 import Data.Version (showVersion)
 import Hooky.Config (Config (..), parseConfig)
 import Hooky.Error (abort, abortImpure)
-import Hooky.Internal.Output (outputLogLines)
+import Hooky.Internal.Output (
+  OutputFormat (..),
+  allOutputFormats,
+  outputLogLines,
+  parseOutputFormat,
+  renderOutputFormat,
+ )
 import Hooky.Lint (
   LintRunConfig (..),
   lintReportSuccess,
@@ -200,12 +206,12 @@ cmdInstall =
     }
 
 data Cmd_Install = Cmd_Install
-  { mode :: RunMode
+  { runGitOpts :: Cmd_RunGit
   }
 
 instance IsCLICommand Cmd_Install where
   cliCommandParse = do
-    mode <- parseRunModeCLI
+    runGitOpts <- cliCommandParse
     pure Cmd_Install{..}
   cliCommandRun cmd git (configFile, _) = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
@@ -220,7 +226,9 @@ instance IsCLICommand Cmd_Install where
           , "--config"
           , quote . Text.pack $ configFile
           , "--mode"
-          , quote . Text.pack $ renderRunMode cmd.mode
+          , quote . Text.pack $ renderRunMode cmd.runGitOpts.mode
+          , "--format"
+          , quote . Text.pack $ renderOutputFormat cmd.runGitOpts.format
           ]
       ]
     makeExecutable hookFile
@@ -255,18 +263,20 @@ cmdRunGit =
 
 data Cmd_RunGit = Cmd_RunGit
   { mode :: RunMode
+  , format :: OutputFormat
   }
 
 instance IsCLICommand Cmd_RunGit where
   cliCommandParse = do
     mode <- parseRunModeCLI
+    format <- parseFormatCLI
     pure Cmd_RunGit{..}
   cliCommandRun cmd git (_, config) = do
     runHooks git config $
       RunOptions
         { mode = cmd.mode
         , fileTargets = FilesStaged
-        , showStdoutOnSuccess = False -- TODO: https://github.com/brandonchinn178/hooky/issues/7
+        , format = cmd.format
         , stash = True
         }
 
@@ -283,6 +293,7 @@ cmdRun =
 data Cmd_Run = Cmd_Run
   { fileTargets :: FileTargets
   , stash :: Bool
+  , format :: OutputFormat
   }
 
 instance IsCLICommand Cmd_Run where
@@ -316,6 +327,7 @@ instance IsCLICommand Cmd_Run where
         [ Opt.long "stash"
         , Opt.help "Stash unstaged changes before running hooks"
         ]
+    format <- parseFormatCLI
 
     pure $
       let (fileTargets, stash) =
@@ -337,7 +349,7 @@ toRunOptions mode cmd =
   RunOptions
     { mode = mode
     , fileTargets = cmd.fileTargets
-    , showStdoutOnSuccess = False -- TODO: https://github.com/brandonchinn178/hooky/issues/7
+    , format = cmd.format
     , stash = cmd.stash
     }
 
@@ -449,3 +461,14 @@ parseRunModeCLI = do
       [ Opt.long "mode"
       , Opt.help $ "Mode to run hooky in during git hooks. One of: " <> modes
       ]
+
+parseFormatCLI :: Opt.Parser OutputFormat
+parseFormatCLI =
+  fmap (fromMaybe Format_Minimal) . Opt.optional $
+    Opt.option (Opt.maybeReader parseOutputFormat) . mconcat $
+      [ Opt.long "format"
+      , Opt.help $ "Format of output. One of: " <> formats
+      ]
+ where
+  formats = uncommas $ map renderOutputFormat allOutputFormats
+  uncommas = Text.unpack . Text.intercalate ", " . map Text.pack

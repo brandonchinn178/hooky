@@ -32,6 +32,7 @@ import Data.Text.IO qualified as Text
 import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
+import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Time qualified as Time
 import GHC.Records (HasField (..))
 import Hooky.Config (Config, HookConfig, PassFilesMode (..), matchesGlobs)
@@ -39,10 +40,11 @@ import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Error (HookyError, abort)
 import Hooky.Internal.Output (
+  OutputFormat (..),
   outputLogLines,
-  renderHookBody,
-  renderHookHeader,
-  renderHookStatus,
+  renderHookInProgressBody,
+  renderHookInProgressHeader,
+  renderHookReport,
   renderLogLines,
  )
 import Hooky.Internal.Temp (hookyTmpDir)
@@ -51,6 +53,7 @@ import Hooky.Utils.Process (renderShell, runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
 import System.Console.Regions (
   ConsoleRegion,
+  closeConsoleRegion,
   displayConsoleRegions,
   finishConsoleRegion,
   setConsoleRegion,
@@ -77,7 +80,7 @@ import UnliftIO.Temporary (withSystemTempFile)
 data RunOptions = RunOptions
   { mode :: RunMode
   , fileTargets :: FileTargets
-  , showStdoutOnSuccess :: Bool
+  , format :: OutputFormat
   , stash :: Bool
   }
 
@@ -94,12 +97,12 @@ runHooks git config options = do
     files <- resolveTargets git options.fileTargets
     let hooks = map (resolveHook config options files) config.hooks
     let checkDiffs = initDiffChecker git options.mode
-    results <- runHookCmds checkDiffs maxHooks hooks
+    results <- runHookCmds checkDiffs options.format maxHooks hooks
     printSummary results
     when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
-  maxParallelHooks = 5 -- TODO: make configurable
+  maxParallelHooks = 5 -- TODO: make configurable - https://github.com/brandonchinn178/hooky/issues/3
   maxHooks =
     case options.mode of
       Mode_Check -> maxParallelHooks
@@ -196,33 +199,36 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
       unless (null itaFiles) $ do
         git.exec $ ["add", "--intent-to-add", "--"] <> itaFiles
 
-runHookCmds :: DiffChecker -> Int -> [HookCmd] -> IO [(Text, HookResult)]
-runHookCmds checkDiffs maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
+runHookCmds :: DiffChecker -> OutputFormat -> Int -> [HookCmd] -> IO [(Text, HookResult)]
+runHookCmds checkDiffs format maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
  where
-  maxOutputLines = 5 -- TODO: make configurable
+  maxOutputLines = 5 -- TODO: make configurable - https://github.com/brandonchinn178/hooky/issues/3
   run hook =
     withConsoleRegion Region.Linear $ \headerRegion ->
       withConsoleRegion (Region.InLine headerRegion) $ \outputRegion ->
         withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
           hookOutput <- initHookOutput maxOutputLines $ \buf ->
-            setConsoleRegion outputRegion $ renderHookBody buf
+            setConsoleRegion outputRegion $ renderHookInProgressBody buf
           hookOutput.log ["Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args]
-          result <- runHook checkDiffs hookOutput hook
-          case result of
-            HookFailed -> do
-              let header = renderHookStatus hook.name (Term.redBG "FAIL")
-              output <- renderHookBody <$> hookOutput.getLines
-              finishConsoleRegion headerRegion header
-              finishConsoleRegion outputRegion $ TextL.stripEnd output
-            _ -> pure ()
+          (result, duration) <- withDuration $ runHook checkDiffs hookOutput hook
+          when (shouldShowResult format result) $ do
+            hookStdout <- hookOutput.getLines
+            let output = if shouldShowStdout format result then hookStdout else []
+            finishConsoleRegion headerRegion $ renderHookReport hook.name result.label output duration
+            closeConsoleRegion outputRegion
           pure (hook.name, result)
+  withDuration action = do
+    start <- getCurrentTime
+    a <- action
+    end <- getCurrentTime
+    pure (a, TextL.pack . show $ end `diffUTCTime` start)
 
 renderHookHeaderAnimated :: ConsoleRegion -> Text -> IO ()
 renderHookHeaderAnimated region name = go 0
  where
   animationFPS = 12 :: Int
   go t = do
-    setConsoleRegion region $ renderHookHeader name t
+    setConsoleRegion region $ renderHookInProgressHeader name t
     threadDelay (1000000 `div` animationFPS)
     go (t + 1)
 
@@ -300,10 +306,6 @@ printSummary :: [(Text, HookResult)] -> IO ()
 printSummary results
   | null results = pure ()
   | otherwise = do
-      -- TODO: Assumes there's only output if there are failed hooks
-      -- Change after https://github.com/brandonchinn178/hooky/issues/7
-      when (length (filter ((== HookFailed) . snd) results) > 0) $ do
-        TextL.putStrLn ""
       render HookPassed ("passed " <> Term.green "✔")
       render HookFailed ("failed " <> Term.red "✘")
       render HookSkipped ("skipped " <> Term.yellow "≫")
@@ -316,6 +318,24 @@ printSummary results
         , if count == 1 then "hook" else "hooks"
         , label
         ]
+
+instance HasField "label" HookResult LazyText where
+  getField = \case
+    HookFailed -> Term.redBG "FAIL"
+    HookPassed -> Term.greenBG "PASS"
+    HookSkipped -> Term.yellowBG "SKIP"
+
+shouldShowResult :: OutputFormat -> HookResult -> Bool
+shouldShowResult format = \case
+  HookFailed -> format >= Format_Minimal
+  HookPassed -> format >= Format_Full
+  HookSkipped -> format >= Format_Full
+
+shouldShowStdout :: OutputFormat -> HookResult -> Bool
+shouldShowStdout format = \case
+  HookFailed -> format >= Format_Minimal
+  HookPassed -> format >= Format_Verbose
+  HookSkipped -> format >= Format_Verbose
 
 {----- FileTargets -----}
 

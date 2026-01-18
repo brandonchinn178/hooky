@@ -4,9 +4,11 @@
 
 module Hooky.E2ESpec (spec) where
 
+import Control.Monad (forM_)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Hooky.Internal.Output (allOutputFormats, renderOutputFormat)
 import Hooky.TestUtils.Git (withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
@@ -19,6 +21,42 @@ spec :: Spec
 spec = do
   describe "hooky run" $ do
     hookyRunSpec "run"
+
+    forM_ allOutputFormats $ \format -> do
+      let flag = "--format=" <> renderOutputFormat format
+          scrubDuration s =
+            case Text.breakOn "duration: " s of
+              (_, "") -> s
+              (pre, post) -> pre <> "duration: XX.XXXs" <> scrubDuration (Text.dropWhile (/= '\n') post)
+      -- https://github.com/brandonchinn178/hooky/issues/3
+      skip "until we can set maxParallelHooks = 1" . it ("outputs " <> flag) $ do
+        (code, stdout, _) <-
+          withGitRepo $ \git -> do
+            writeFile ".hooky.kdl" $
+              """
+              hook hooky_pass {
+                command hooky lint
+                files *.pass
+              }
+              hook hooky_fail {
+                command hooky lint
+                files *.fail
+              }
+              hook hooky_skip {
+                command hooky lint
+                files *.skip
+              }
+              lint_rules {
+                - end_of_file_fixer
+              }
+
+              """
+            writeFile "file.pass" "good\n"
+            writeFile "file.fail" "bad"
+            git.exec ["add", "."]
+            readHooky ["run", "--all", flag]
+        code `shouldBe` ExitFailure 1
+        scrubDuration stdout `shouldSatisfy` P.matchesSnapshot
 
   describe "hooky fix" $ do
     hookyRunSpec "fix"
@@ -93,6 +131,8 @@ readHooky args = do
   HookyExe hooky <- getFixture
   (stdout_r, stdout_w) <- Process.createPipe
   (stderr_r, stderr_w) <- Process.createPipe
+  IO.hSetEncoding stdout_r IO.utf8
+  IO.hSetEncoding stderr_r IO.utf8
   let proc =
         (Process.proc hooky args)
           { Process.std_out = Process.UseHandle stdout_w

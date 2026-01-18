@@ -4,6 +4,7 @@ module Hooky.Utils.Term (
   green,
   red,
   yellow,
+  greenBG,
   redBG,
   yellowBG,
 ) where
@@ -42,6 +43,9 @@ red = wrapSGR [SetColor Foreground Vivid ANSI.Red]
 
 yellow :: TextWrapper
 yellow = wrapSGR [SetColor Foreground Dull ANSI.Yellow]
+
+greenBG :: TextWrapper
+greenBG = wrapSGR [SetColor Background Dull ANSI.Green]
 
 redBG :: TextWrapper
 redBG = wrapSGR [SetColor Background Dull ANSI.Red]

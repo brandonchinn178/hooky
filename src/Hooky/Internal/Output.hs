@@ -2,15 +2,23 @@
 
 module Hooky.Internal.Output (
   -- * Outputs for running hooks
-  renderHookStatus,
-  renderHookBody,
-  renderHookHeader,
+  renderHookInProgressHeader,
+  renderHookInProgressBody,
+  renderHookReport,
 
   -- * Hooky messages
   renderLogLines,
   outputLogLines,
+
+  -- * Format
+  OutputFormat (..),
+  allOutputFormats,
+  parseOutputFormat,
+  renderOutputFormat,
 ) where
 
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
@@ -20,21 +28,16 @@ import Hooky.Utils.Term qualified as Term
 renderHookStatus :: Text -> LazyText -> LazyText
 renderHookStatus name status =
   TextL.concat
-    [ "╭─── "
-    , status
+    [ status
     , " "
     , Term.bold $ TextL.fromStrict name
-    , " "
     ]
 
-renderHookBody :: [LazyText] -> LazyText
-renderHookBody = TextL.unlines . map ("│ " <>)
-
-renderHookHeader :: Text -> Int -> LazyText
-renderHookHeader name time =
+renderHookInProgressHeader :: Text -> Int -> LazyText
+renderHookInProgressHeader name time =
   TextL.concat $
     [ start
-    , "["
+    , " ["
     , TextL.pack $ map getBarChar [0 .. totalWidth - 1]
     , "]\n"
     ]
@@ -42,12 +45,29 @@ renderHookHeader name time =
   totalWidth = 6 :: Int
   barWidth = 3 :: Int
 
-  start = renderHookStatus name (Term.yellowBG "RUNNING")
+  start = "╭─── " <> renderHookStatus name (Term.yellowBG "RUNNING")
 
   getBarChar i =
     if any (== i) . map (`mod` totalWidth) . map (time +) $ [0 .. barWidth - 1]
       then '='
       else ' '
+
+renderHookInProgressBody :: [LazyText] -> LazyText
+renderHookInProgressBody = TextL.unlines . map ("│ " <>)
+
+renderHookReport :: Text -> LazyText -> [LazyText] -> LazyText -> LazyText
+renderHookReport name status output duration =
+  TextL.intercalate "\n" $
+    (start <> "─── " <> renderHookStatus name status <> " " <> Term.yellow ("(duration: " <> duration <> ")"))
+      : body
+ where
+  start = if null output then "◈" else "╭"
+  body =
+    case NonEmpty.nonEmpty output of
+      Nothing -> []
+      Just outputNE ->
+        let (middle, end) = (NonEmpty.init outputNE, NonEmpty.last outputNE)
+         in map ("│ " <>) middle <> ["◈ " <> end]
 
 renderLogLines :: [LazyText] -> [LazyText]
 renderLogLines = map Term.yellow . onHead ("═══▶ " <>)
@@ -58,3 +78,22 @@ renderLogLines = map Term.yellow . onHead ("═══▶ " <>)
 
 outputLogLines :: LazyText -> IO ()
 outputLogLines = TextL.putStr . TextL.unlines . renderLogLines . TextL.lines
+
+{----- OutputFormat -----}
+
+data OutputFormat = Format_Minimal | Format_Full | Format_Verbose
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+allOutputFormats :: [OutputFormat]
+allOutputFormats = [minBound .. maxBound]
+
+parseOutputFormat :: String -> Maybe OutputFormat
+parseOutputFormat = flip Map.lookup x
+ where
+  x = Map.fromList [(renderOutputFormat m, m) | m <- allOutputFormats]
+
+renderOutputFormat :: OutputFormat -> String
+renderOutputFormat = \case
+  Format_Minimal -> "minimal"
+  Format_Full -> "full"
+  Format_Verbose -> "verbose"
