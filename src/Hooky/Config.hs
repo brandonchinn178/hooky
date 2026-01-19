@@ -9,7 +9,8 @@
 module Hooky.Config (
   -- * Config
   Config (..),
-  parseConfig,
+  loadConfig,
+  RepoConfig (..),
   HookConfig (..),
   PassFilesMode (..),
   LintRule (..),
@@ -21,12 +22,10 @@ module Hooky.Config (
   matchesGlobs,
   toGlob,
   renderGlob,
-
-  -- * Skipped hooks
-  skippedHooks,
 ) where
 
 import Control.Arrow (returnA)
+import Control.Monad (unless)
 import Data.Bifunctor qualified as Bifunctor
 import Data.List (partition, tails)
 import Data.List.NonEmpty (NonEmpty)
@@ -35,26 +34,47 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import GHC.Records (HasField (..))
+import Hooky.Error (abort)
 import KDL.Arrow qualified as KDL
+import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
-import System.IO.Unsafe (unsafePerformIO)
 
 data Config = Config
+  { repoConfigPath :: FilePath
+  , repo :: RepoConfig
+  , skippedHooks :: Set Text
+  }
+  deriving (Show, Eq)
+
+loadConfig :: FilePath -> IO Config
+loadConfig repoConfigPath = do
+  configFileExists <- doesFileExist repoConfigPath
+  unless configFileExists $ do
+    abort $ "Config file doesn't exist: " <> Text.pack repoConfigPath
+  repo <- either abort pure . parseRepoConfig =<< Text.readFile repoConfigPath
+
+  let fromCSV = Text.splitOn "," . Text.pack
+  skippedHooks <- Set.fromList . maybe [] fromCSV <$> lookupEnv "SKIP"
+
+  pure Config{..}
+
+data RepoConfig = RepoConfig
   { files :: [Glob]
   , hooks :: [HookConfig]
   , lintRules :: [LintRule]
   }
   deriving (Show, Eq)
 
-parseConfig :: Text -> Either Text Config
-parseConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
+parseRepoConfig :: Text -> Either Text RepoConfig
+parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
   decoder = KDL.document $ proc () -> do
     files <- KDL.argsAt "files" -< ()
     hooks <- KDL.many $ KDL.node "hook" -< ()
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
-    returnA -< Config{..}
+    returnA -< RepoConfig{..}
 
 data HookConfig = HookConfig
   { name :: Text
@@ -217,10 +237,3 @@ matchesGlobs globs s =
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]
   valueDecoder = toGlob <$> KDL.text
-
-{----- Skipped hooks -----}
-
-skippedHooks :: Set Text
-skippedHooks = unsafePerformIO $ Set.fromList . maybe [] csv <$> lookupEnv "SKIP"
- where
-  csv = Text.splitOn "," . Text.pack

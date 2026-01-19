@@ -21,7 +21,7 @@ import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Data.Typeable (typeOf, typeRep)
 import Data.Version (showVersion)
-import Hooky.Config (Config (..), parseConfig)
+import Hooky.Config (Config (..), loadConfig)
 import Hooky.Error (abort, abortImpure)
 import Hooky.Internal.Output (
   OutputFormat (..),
@@ -31,7 +31,7 @@ import Hooky.Internal.Output (
   renderOutputFormat,
  )
 import Hooky.Lint (
-  LintRunConfig (..),
+  LintOptions (..),
   lintReportSuccess,
   renderLintReport,
   runLintRules,
@@ -71,10 +71,7 @@ data CLIOptions = CLIOptions
   , configFile :: Maybe FilePath
   }
 
-type CLICommandAction =
-  GitClient ->
-  (FilePath, Config) ->
-  IO ()
+type CLICommandAction = GitClient -> Config -> IO ()
 
 data CLICommandDef
   = forall cmd.
@@ -150,18 +147,14 @@ main = handleErrors $ do
   cli <- loadCLIOptions
 
   git <- initGitClient
-  configFile <-
+
+  repoConfigPath <-
     case cli.configFile of
       Nothing -> pure $ git.repo </> ".hooky.kdl"
       Just fp -> makeAbsolute fp
+  config <- loadConfig repoConfigPath
 
-  configFileExists <- doesFileExist configFile
-  unless configFileExists $ do
-    abort $ "Config file doesn't exist: " <> Text.pack configFile
-
-  config <- either abort pure . parseConfig =<< Text.readFile configFile
-
-  cli.run git (configFile, config)
+  cli.run git config
 
 -- | Resolve files specified as arguments.
 --
@@ -213,7 +206,7 @@ instance IsCLICommand Cmd_Install where
   cliCommandParse = do
     runGitOpts <- cliCommandParse
     pure Cmd_Install{..}
-  cliCommandRun cmd git (configFile, _) = do
+  cliCommandRun cmd git config = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
@@ -224,7 +217,7 @@ instance IsCLICommand Cmd_Install where
           , quote . Text.pack $ exe
           , "__git"
           , "--config"
-          , quote . Text.pack $ configFile
+          , quote . Text.pack $ config.repoConfigPath
           , "--mode"
           , quote . Text.pack $ renderRunMode cmd.runGitOpts.mode
           , "--format"
@@ -271,7 +264,7 @@ instance IsCLICommand Cmd_RunGit where
     mode <- parseRunModeCLI
     format <- parseFormatCLI
     pure Cmd_RunGit{..}
-  cliCommandRun cmd git (_, config) = do
+  cliCommandRun cmd git config = do
     runHooks git config $
       RunOptions
         { mode = cmd.mode
@@ -337,7 +330,7 @@ instance IsCLICommand Cmd_Run where
               Just ft -> (ft, stashFlag)
        in Cmd_Run{mode = Mode_Check, ..}
 
-  cliCommandRun cmd git (_, config) = do
+  cliCommandRun cmd git config = do
     runHooks git config $
       RunOptions
         { mode = cmd.mode
@@ -395,16 +388,16 @@ instance IsCLICommand Cmd_Lint where
         ]
     pure Cmd_Lint{..}
 
-  cliCommandRun cmd git (_, config) = do
-    report <- runLintRules git lintConfig cmd.files
+  cliCommandRun cmd git config = do
+    report <- runLintRules git config options
     Text.putStrLn $ renderLintReport report
     unless (lintReportSuccess report) $ do
       exitFailure
    where
-    lintConfig =
-      LintRunConfig
+    options =
+      LintOptions
         { autofix = cmd.autofix
-        , rules = config.lintRules
+        , files = cmd.files
         }
 
   cliCommandFiles Cmd_Lint{..} = Just (files, \files' -> Cmd_Lint{files = files', ..})

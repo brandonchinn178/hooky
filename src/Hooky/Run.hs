@@ -41,10 +41,10 @@ import Hooky.Config (
   HookConfig,
   PassFilesMode (..),
   matchesGlobs,
-  skippedHooks,
  )
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
+import Hooky.Config qualified as RepoConfig (RepoConfig (..))
 import Hooky.Error (HookyError, abort)
 import Hooky.Internal.Output (
   OutputFormat (..),
@@ -102,7 +102,7 @@ runHooks :: GitClient -> Config -> RunOptions -> IO ()
 runHooks git config options = do
   (if options.stash then withStash git options.mode else id) $ do
     files <- resolveTargets git options.fileTargets
-    let hooks = map (resolveHook config options files) config.hooks
+    let hooks = map (resolveHook config options files) config.repo.hooks
     let checkDiffs = initDiffChecker git options.mode
     results <- runHookCmds checkDiffs options.format maxHooks hooks
     printSummary results
@@ -246,6 +246,7 @@ data HookCmd = HookCmd
   , args :: NonEmpty Text
   , passFiles :: PassFilesMode
   , files :: [FilePath]
+  , isSkip :: Bool
   }
   deriving (Show, Eq)
 
@@ -259,13 +260,14 @@ resolveHook config options files hookConfig =
           else hookConfig.cmdArgs `NonEmpty.appendList` hookConfig.checkArgs
     , passFiles = hookConfig.passFiles
     , files = filter isIncluded files
+    , isSkip = hookConfig.name `Set.member` config.skippedHooks
     }
  where
-  isIncluded fp = matchesGlobs (config.files <> hookConfig.files) (Text.pack fp)
+  isIncluded fp = matchesGlobs (config.repo.files <> hookConfig.files) (Text.pack fp)
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
-  if null hook.files || hook.name `Set.member` skippedHooks
+  if null hook.files || hook.isSkip
     then pure HookSkipped
     else checkDiffs hookOutput $ do
       code <-

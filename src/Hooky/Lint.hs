@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,7 +7,7 @@
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Lint (
-  LintRunConfig (..),
+  LintOptions (..),
   LintReport (..),
   LintResult (..),
   runLintRules,
@@ -33,11 +34,12 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Config (
+  Config (..),
   Glob,
   LintRule (..),
   LintRuleRule (..),
+  RepoConfig (..),
   matchesGlobs,
-  skippedHooks,
   toGlob,
  )
 import Hooky.Utils.Git (GitClient)
@@ -45,25 +47,23 @@ import System.Directory qualified as Dir
 import System.IO.Error (isDoesNotExistError)
 import UnliftIO.Exception (tryJust)
 
-type AutoFix = Bool
-
-data LintRunConfig = LintRunConfig
-  { autofix :: AutoFix
-  , rules :: [LintRule]
+data LintOptions = LintOptions
+  { autofix :: Bool
+  , files :: [FilePath]
   }
 
 {----- runLintRules -----}
 
-runLintRules :: GitClient -> LintRunConfig -> [FilePath] -> IO LintReport
-runLintRules git config files = do
+runLintRules :: GitClient -> Config -> LintOptions -> IO LintReport
+runLintRules git config options = do
   let allLinters =
         [ (rule, fromLintRule rule)
-        | rule <- config.rules
-        , rule.name `Set.notMember` skippedHooks
+        | rule <- config.repo.lintRules
+        , rule.name `Set.notMember` config.skippedHooks
         ]
   nonFileLintResults <- runNonFileLintRules git allLinters
   allFilesLintResults <- runAllFilesLintRules git allLinters
-  fileLintResults <- mapM (runPerFileLintRules git config allLinters) files
+  fileLintResults <- mapM (runPerFileLintRules git options allLinters) options.files
   pure . LintReport . Map.unionsWith (<>) $
     [ Map.singleton Nothing nonFileLintResults
     , allFilesLintResults
@@ -95,11 +95,11 @@ runAllFilesLintRules git allLinters = do
 
 runPerFileLintRules ::
   GitClient ->
-  LintRunConfig ->
+  LintOptions ->
   [(LintRule, LintAction)] ->
   FilePath ->
   IO (Maybe FilePath, [(Text, LintResult)])
-runPerFileLintRules git config allLinters file =
+runPerFileLintRules git options allLinters file =
   -- Skip reading file if there are no per-file linters to run
   (if null linters then pure Nothing else readFileMaybe file) >>= \case
     Nothing -> pure (Just file, [])
@@ -110,7 +110,7 @@ runPerFileLintRules git config allLinters file =
               -- TODO: check if file is valid for rule
               (result, contents') <- run git file contents
               pure $
-                if config.autofix
+                if options.autofix
                   then ((rule.name, result), contents')
                   -- TODO: show diff of fix failure
                   else ((rule.name, if result == LintFixed then LintFailed "file would be changed" else result), contents)

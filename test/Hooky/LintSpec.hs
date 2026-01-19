@@ -4,10 +4,11 @@
 
 module Hooky.LintSpec (spec) where
 
+import Hooky.Config (Config (..), RepoConfig (..))
 import Hooky.Lint (
+  LintOptions (..),
   LintRule (..),
   LintRuleRule (..),
-  LintRunConfig (..),
   lintReportSuccess,
   renderLintReport,
   runLintRules,
@@ -22,11 +23,7 @@ import UnliftIO.Exception (SomeException)
 spec :: Spec
 spec = do
   describe "check_broken_symlinks" $ do
-    let config =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule LintRule_CheckBrokenSymlinks [toGlob "*"]]
-            }
+    let config = defaultConfig LintRule_CheckBrokenSymlinks
 
     it "succeeds when all symlinks are valid" $ do
       report <-
@@ -34,7 +31,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
-          runLintRules git.client config ["foo.txt", "foo-link.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt", "foo-link.txt"]
       lintReportSuccess report `shouldBe` True
 
     it "fails when a symlink is broken" $ do
@@ -42,7 +39,7 @@ spec = do
         withGitRepo $ \git -> do
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config ["foo-link.txt"]
+          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -52,7 +49,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config ["foo-link.txt"]
+          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
       lintReportSuccess report `shouldBe` False
 
     it "fails when target is deleted" $ do
@@ -63,15 +60,11 @@ spec = do
           git.exec ["add", "foo.txt", "foo-link.txt"]
           git.exec ["commit", "-m", "Initial commit"]
           git.exec ["rm", "foo.txt"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
 
   describe "check_case_conflict" $ do
-    let config =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule LintRule_CheckCaseConflict [toGlob "*"]]
-            }
+    let config = defaultConfig LintRule_CheckCaseConflict
 
     it "succeeds when no files conflict" $ do
       report <-
@@ -79,7 +72,7 @@ spec = do
           writeFile "foo.txt" ""
           writeFile "bar.txt" ""
           git.exec ["add", "foo.txt", "bar.txt"]
-          runLintRules git.client config ["foo.txt", "bar.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
       lintReportSuccess report `shouldBe` True
 
     it "fails when files conflict" $ do
@@ -92,7 +85,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config ["foo.txt", "FOO.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt", "FOO.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -107,15 +100,11 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config ["FOO.txt"]
+          runLintRules git.client config $ defaultOptions ["FOO.txt"]
       lintReportSuccess report `shouldBe` False
 
   describe "check_merge_conflict" $ do
-    let config =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule LintRule_CheckMergeConflict [toGlob "*"]]
-            }
+    let config = defaultConfig LintRule_CheckMergeConflict
 
     it "succeeds when there are no merge conflicts" $ do
       report <-
@@ -125,7 +114,7 @@ spec = do
           git.exec ["switch", "-c", "branch2"] >> writeFile "bar.txt" "branch2" >> git.exec ["add", "bar.txt"] >> git.exec ["commit", "-m", "branch2"]
           git.exec ["switch", "main"]
           git.exec ["merge", "branch1", "branch2"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` True
 
     it "fails when there are merge conflicts" $ do
@@ -136,23 +125,19 @@ spec = do
           git.exec ["switch", "-c", "branch2", "main"] >> writeFile "foo.txt" "branch2" >> git.exec ["add", "foo.txt"] >> git.exec ["commit", "-m", "branch2"]
           git.exec ["switch", "main"]
           git.exec ["merge", "branch1", "branch2"] `shouldSatisfy` P.throws (P.anything @SomeException)
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "end_of_file_fixer" $ do
-    let config =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule LintRule_EndOfFileFixer [toGlob "*"]]
-            }
+    let config = defaultConfig LintRule_EndOfFileFixer
 
     it "succeeds when all files have correct trailing newlines" $ do
       report <-
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` True
 
     it "fails when file has no trailing newlines" $ do
@@ -160,7 +145,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -169,7 +154,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n\n\n\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
 
     it "autofixes when file has no trailing newlines" $ do
@@ -177,7 +162,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest"
           git.exec ["add", "foo.txt"]
-          report <- runLintRules git.client config{autofix = True} ["foo.txt"]
+          report <- runLintRules git.client config $ (defaultOptions ["foo.txt"]){autofix = True}
           readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
       lintReportSuccess report `shouldBe` False
@@ -188,29 +173,25 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n\n\n\n"
           git.exec ["add", "foo.txt"]
-          report <- runLintRules git.client config{autofix = True} ["foo.txt"]
+          report <- runLintRules git.client config $ (defaultOptions ["foo.txt"]){autofix = True}
           readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
       lintReportSuccess report `shouldBe` False
 
   describe "no_commit_to_branch" $ do
-    let mkConfig branch =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule (LintRule_NoCommitToBranch [toGlob branch]) [toGlob "*"]]
-            }
+    let mkConfig branch = defaultConfig $ LintRule_NoCommitToBranch [toGlob branch]
 
     it "succeeds when committing on another branch" $ do
       report <-
         withGitRepo $ \git -> do
           git.exec ["switch", "-c", "test"]
-          runLintRules git.client (mkConfig "main") []
+          runLintRules git.client (mkConfig "main") (defaultOptions [])
       lintReportSuccess report `shouldBe` True
 
     it "fails when committing on bad branch" $ do
       report <-
         withGitRepo $ \git -> do
-          runLintRules git.client (mkConfig "main") []
+          runLintRules git.client (mkConfig "main") (defaultOptions [])
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -218,23 +199,19 @@ spec = do
       report <-
         withGitRepo $ \git -> do
           git.exec ["switch", "-c", "release-2.0"]
-          runLintRules git.client (mkConfig "release-*") []
+          runLintRules git.client (mkConfig "release-*") (defaultOptions [])
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
   describe "trailing_whitespace" $ do
-    let config =
-          LintRunConfig
-            { autofix = False
-            , rules = [LintRule LintRule_TrailingWhitespace [toGlob "*"]]
-            }
+    let config = defaultConfig LintRule_TrailingWhitespace
 
     it "succeeds when no lines have trailing whitespace" $ do
       report <-
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config ["foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` True
 
     it "fails when line has trailing whitespace" $ do
@@ -243,7 +220,8 @@ spec = do
           writeFile "end-space.txt" "test  \ntest\n"
           writeFile "end-tab.txt" "test\t\t\ntest\n"
           git.exec ["add", "end-space.txt", "end-tab.txt"]
-          runLintRules git.client config ["end-space.txt", "end-tab.txt"]
+          runLintRules git.client config $
+            defaultOptions ["end-space.txt", "end-tab.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -253,9 +231,31 @@ spec = do
           writeFile "end-space.txt" "test  \ntest\n"
           writeFile "end-tab.txt" "test\t\t\ntest\n"
           git.exec ["add", "end-space.txt", "end-tab.txt"]
-          report <- runLintRules git.client config{autofix = True} ["end-space.txt", "end-tab.txt"]
+          report <-
+            runLintRules git.client config $
+              (defaultOptions ["end-space.txt", "end-tab.txt"]){autofix = True}
           readFile "end-space.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           readFile "end-tab.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+defaultOptions :: [FilePath] -> LintOptions
+defaultOptions files =
+  LintOptions
+    { autofix = False
+    , files = files
+    }
+
+defaultConfig :: LintRuleRule -> Config
+defaultConfig rule =
+  Config
+    { repoConfigPath = ".hooky.kdl"
+    , repo =
+        RepoConfig
+          { files = []
+          , hooks = []
+          , lintRules = [LintRule rule [toGlob "*"]]
+          }
+    , skippedHooks = mempty
+    }
