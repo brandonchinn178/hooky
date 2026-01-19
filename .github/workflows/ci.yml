@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+defaults:
+  run:
+    shell: bash -eu -o pipefail {0}
+
 jobs:
   cabal_file:
     uses: ./.github/workflows/cabal_file.yml
