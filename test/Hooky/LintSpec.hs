@@ -253,7 +253,7 @@ defaultConfig rule =
     { repoConfigPath = ".hooky.kdl"
     , repo =
         RepoConfig
-          { files = []
+          { fileGlobs = []
           , hooks = []
           , lintRules = [LintRule rule [toGlob "*"]]
           }

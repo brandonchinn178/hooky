@@ -78,7 +78,7 @@ loadConfig repoConfigPath = do
 {----- RepoConfig -----}
 
 data RepoConfig = RepoConfig
-  { files :: [Glob]
+  { fileGlobs :: [Glob]
   , hooks :: [HookConfig]
   , lintRules :: [LintRule]
   }
@@ -95,7 +95,7 @@ parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
   decoder = KDL.document $ proc () -> do
-    files <- KDL.argsAt "files" -< ()
+    fileGlobs <- KDL.argsAt "files" -< ()
     hooks <- KDL.many $ KDL.node "hook" -< ()
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
     returnA -< RepoConfig{..}
@@ -106,7 +106,7 @@ data HookConfig = HookConfig
   , checkArgs :: [Text]
   , fixArgs :: [Text]
   , passFiles :: PassFilesMode
-  , files :: [Glob]
+  , fileGlobs :: [Glob]
   }
   deriving (Show, Eq)
 
@@ -114,15 +114,15 @@ instance KDL.DecodeNode HookConfig where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     finalize <- KDL.children $ KDL.nodeWith "command" $ commandDecoder -< ()
-    files <- KDL.children $ KDL.nodeWith "files" $ KDL.some KDL.arg -< ()
-    returnA -< finalize name files
+    fileGlobs <- KDL.children $ KDL.nodeWith "files" $ KDL.some KDL.arg -< ()
+    returnA -< finalize name fileGlobs
    where
     commandDecoder = proc () -> do
       cmdArgs <- NonEmpty.fromList <$> KDL.some KDL.arg -< ()
       checkArgs <- KDL.children $ KDL.argsAt "check_args" -< ()
       fixArgs <- KDL.children $ KDL.argsAt "fix_args" -< ()
       passFiles <- KDL.children $ KDL.option PassFiles_XArgs $ KDL.argAt "pass_files" -< ()
-      returnA -< (\name files -> HookConfig{..})
+      returnA -< (\name fileGlobs -> HookConfig{..})
 
 {----- GlobalConfig -----}
 
@@ -195,7 +195,7 @@ instance KDL.DecodeValue OutputFormat where
 
 data LintRule = LintRule
   { rule :: LintRuleRule
-  , files :: [Glob]
+  , fileGlobs :: [Glob]
   }
   deriving (Show, Eq)
 
@@ -223,7 +223,7 @@ instance KDL.DecodeNode LintRule where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     rule <- ruleDecoder -< name
-    files <- KDL.children $ KDL.argsAt "files" -< ()
+    fileGlobs <- KDL.children $ KDL.argsAt "files" -< ()
     returnA -< LintRule{..}
    where
     ruleDecoder = proc name -> do

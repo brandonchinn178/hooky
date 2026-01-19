@@ -255,7 +255,7 @@ resolveHook config options files hookConfig =
     , isSkip = hookConfig.name `Set.member` config.skippedHooks
     }
  where
-  isIncluded fp = matchesGlobs (config.repo.files <> hookConfig.files) (Text.pack fp)
+  isIncluded fp = matchesGlobs (config.repo.fileGlobs <> hookConfig.fileGlobs) (Text.pack fp)
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
