@@ -13,7 +13,6 @@ module Hooky.Internal.Output (
   renderOutputFormat,
 ) where
 
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text.Lazy (LazyText)
@@ -57,12 +56,7 @@ renderHookReport name status output duration =
       : body
  where
   start = if null output then "◈" else "╭"
-  body =
-    case NonEmpty.nonEmpty output of
-      Nothing -> []
-      Just outputNE ->
-        let (middle, end) = (NonEmpty.init outputNE, NonEmpty.last outputNE)
-         in map ("│ " <>) middle <> ["◈ " <> end]
+  body = map ("│ " <>) output <> ["◈"]
 
 {----- OutputFormat -----}
 
