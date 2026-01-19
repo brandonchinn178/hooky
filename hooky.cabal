@@ -31,6 +31,7 @@ library
     Hooky.Internal.Messages
     Hooky.Internal.Output
     Hooky.Internal.Temp
+    Hooky.Utils.Directory
     Hooky.Utils.Git
     Hooky.Utils.Process
     Hooky.Utils.Term

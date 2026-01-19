@@ -4,16 +4,14 @@ module Hooky.Internal.Temp (
 
 import Control.Monad (forM_, when)
 import Data.Time qualified as Time
+import Hooky.Utils.Directory (listDirectoryRecur)
 import System.Directory (
   XdgDirectory (..),
   createDirectoryIfMissing,
-  doesDirectoryExist,
   getModificationTime,
   getXdgDirectory,
-  listDirectory,
   removePathForcibly,
  )
-import System.FilePath ((</>))
 import System.IO.Unsafe (unsafePerformIO)
 
 hookyTmpDir :: FilePath
@@ -30,13 +28,9 @@ getHookyTmpDir = do
  where
   -- clean up all files older than 7 days
   cleanup now dir = do
-    paths <- map (dir </>) <$> listDirectory dir
+    paths <- listDirectoryRecur dir
     forM_ paths $ \path -> do
-      isDir <- doesDirectoryExist path
-      if isDir
-        then cleanup now path
-        else do
-          t <- getModificationTime path
-          when (Time.addUTCTime (7 * day) t < now) $ do
-            removePathForcibly path
+      t <- getModificationTime path
+      when (Time.addUTCTime (7 * day) t < now) $ do
+        removePathForcibly path
   day = 60 * 60 * 24
