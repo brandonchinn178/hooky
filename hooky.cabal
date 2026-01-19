@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name: hooky
-version: 0.0.0
+version: 1.0.0
 synopsis: A minimal git hooks manager
 description: A minimal git hooks manager.
 homepage: https://github.com/brandonchinn178/hooky#readme
@@ -67,7 +67,10 @@ executable hooky
     , text
     , unliftio
   default-language: GHC2024
-  ghc-options: -Wall -Wcompat
+  ghc-options:
+    -Wall -Wcompat
+    -- https://github.com/commercialhaskell/stack/issues/3918
+    -optP-Wno-nonportable-include-path
 
 test-suite hooky-tests
   type: exitcode-stdio-1.0

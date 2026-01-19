@@ -48,7 +48,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           path: ./.release/bin/
-          name: hooky-binary-*
+          pattern: hooky-binary-*
           merge-multiple: true
       -
         name: Generate release notes

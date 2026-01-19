@@ -38,7 +38,7 @@ jobs:
           set -x
           case ${{ runner.os }} in
             (Linux) os=linux ;;
-            (macOS) os=osx ;;
+            (macOS) os=darwin ;;
             (*) echo 'Unknown OS' >&1; exit 1 ;;
           esac
           case ${{ runner.arch }} in
@@ -56,6 +56,7 @@ jobs:
         uses: haskell-actions/setup@v2
         with:
           enable-stack: true
+          stack-no-global: true
       -
         uses: actions/cache@v5
         with:
@@ -72,16 +73,25 @@ jobs:
         run: |
           stack install :hooky --local-bin-path ./bin
           strip bin/hooky
-          cp bin/hooky bin/hooky-${version}-${target}
+          cp bin/hooky bin/hooky-${version}-${platform}
       -
         name: Run tests
         run: TEST_HOOKY_EXE=$PWD/bin/hooky stack build --test
       -
         name: Run hooky
         run: |
-          curl -LSfs "https://github.com/facebook/dotslash/releases/latest/download/dotslash-ubuntu-22.04.$(uname -m).tar.gz" | tar fxz - -C /usr/local/bin/
+          case ${platform} in
+            (linux-*)  url=https://github.com/facebook/dotslash/releases/latest/download/dotslash-ubuntu-22.04.$(uname -m).tar.gz ;;
+            (darwin-*) url=https://github.com/facebook/dotslash/releases/latest/download/dotslash-macos.tar.gz ;;
+          esac
+          set -o pipefail
+          curl -LSfs $url | tar fxz - -C /usr/local/bin/
+
           export PATH=$PWD/bin:$PATH
           export SKIP=no_commit_to_branch
+          if [[ ${platform} == linux-arm64 ]]; then
+            SKIP="$SKIP,fourmolu"  # fourmolu doesn't have linux-aarch64 binaries yet
+          fi
           hooky run --all --format=verbose
       -
         name: Store binary
