@@ -266,11 +266,11 @@ data PassFilesMode
 
 instance KDL.DecodeValue PassFilesMode where
   valueDecoder = KDL.withDecoder KDL.valueDecoder $ \case
-    Nothing -> pure PassFiles_None
-    Just "xargs" -> pure PassFiles_XArgs
-    Just "xargs_parallel" -> pure PassFiles_XArgsParallel
-    Just "file" -> pure PassFiles_File
-    Just s -> KDL.failM $ "Invalid pass_files value: " <> s
+    "xargs" -> pure PassFiles_XArgs
+    "xargs_parallel" -> pure PassFiles_XArgsParallel
+    "file" -> pure PassFiles_File
+    "none" -> pure PassFiles_None
+    s -> KDL.failM $ "Invalid pass_files value: " <> s
 
 {----- Glob -----}
 
