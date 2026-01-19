@@ -1,0 +1,25 @@
+hook hook1 {
+    command "./hook1.sh" {
+        fix_args --fix
+    }
+    files *.txt
+}
+
+hook hook2 {
+    command "./hook2.sh" {
+        fix_args --fix
+    }
+    files *.txt
+}
+
+hook hook3 {
+    command "./hook3.sh" {
+        fix_args --fix
+    }
+    files *.txt
+}
+
+hook always_skip {
+    command "true"
+    files *.no_match
+}

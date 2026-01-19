@@ -8,7 +8,9 @@ Features:
 * Hooks run in parallel
 * Built-in support for auto-fixing files
 * Show stdout while hook is in-progress
-* Support for passing files via response files
+* Support for passing files to hooks via response files
+
+<img src="scripts/demo/demo.gif" />
 
 ## Installation
 
