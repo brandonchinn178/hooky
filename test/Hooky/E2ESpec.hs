@@ -20,7 +20,62 @@ import System.Process qualified as Process
 spec :: Spec
 spec = do
   describe "hooky run" $ do
-    hookyRunSpec "run"
+    it "defaults to --stash --staged" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        writeFile "good.txt" "good\n"
+        writeFile "bad1.txt" "bad"
+        writeFile "bad2.txt" "bad\n"
+        git.exec ["add", ".hooky.kdl", "good.txt", "bad2.txt"]
+        writeFile "bad2.txt" "bad"
+        runHooky ["run"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
+    it "errors if multiple file selection flags are passed" $ do
+      (code, _, stderr) <- readHooky ["run", "--all", "--modified"]
+      code `shouldBe` ExitFailure 1
+      stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
+
+    it "errors if file argument and flags are both passed" $ do
+      (code, _, stderr) <- readHooky ["run", "--all", "file.txt"]
+      code `shouldBe` ExitFailure 1
+      stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
+
+    it "stashes intent-to-add files" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        writeFile "bad.txt" "bad"
+        git.exec ["add", ".hooky.kdl"]
+        git.exec ["add", "-N", "bad.txt"]
+        let checkIntentToAdd = do
+              git.client.query ["diff-files", "--name-only", "--diff-filter=A"]
+                `shouldSatisfy` P.returns (P.eq "bad.txt")
+              readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
+        checkIntentToAdd
+        runHooky ["run", "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+        checkIntentToAdd
+
+    it "stashes untracked files" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        writeFile "bad.txt" "bad"
+        git.exec ["add", ".hooky.kdl"]
+        let checkUntracked = do
+              git.client.query ["ls-files", "--others", "--exclude-standard"]
+                `shouldSatisfy` P.returns (P.eq "bad.txt")
+              readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
+        checkUntracked
+        runHooky ["run", "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+        checkUntracked
+
+    it "error if .hooky.kdl is to be stashed" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        git.exec ["add", ".hooky.kdl"]
+        git.exec ["commit", "-m", "test"]
+        writeFile ".hooky.kdl" $ hookyConfigEofFixer <> "\n\n\n"
+        (code, _, stderr) <- readHooky ["run", "--stash", "--staged"]
+        code `shouldBe` ExitFailure 1
+        stderr `shouldBe` ".hooky.kdl has changes, stage it first\n"
 
     forM_ allOutputFormats $ \format -> do
       let flag = Text.unpack $ "--format=" <> renderOutputFormat format
@@ -101,68 +156,6 @@ spec = do
           writeFile "test.txt" "test"
           git.exec ["add", "."]
           runHookyWithEnv "SKIP=end_of_file_fixer" ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
-
-  describe "hooky fix" $ do
-    hookyRunSpec "fix"
-
-hookyRunSpec :: String -> Spec
-hookyRunSpec cmd = do
-  it "defaults to --stash --staged" $ do
-    withGitRepo $ \git -> do
-      writeFile ".hooky.kdl" hookyConfigEofFixer
-      writeFile "good.txt" "good\n"
-      writeFile "bad1.txt" "bad"
-      writeFile "bad2.txt" "bad\n"
-      git.exec ["add", ".hooky.kdl", "good.txt", "bad2.txt"]
-      writeFile "bad2.txt" "bad"
-      runHooky [cmd] `shouldSatisfy` P.returns (P.eq ExitSuccess)
-
-  it "errors if multiple file selection flags are passed" $ do
-    (code, _, stderr) <- readHooky [cmd, "--all", "--modified"]
-    code `shouldBe` ExitFailure 1
-    stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
-
-  it "errors if file argument and flags are both passed" $ do
-    (code, _, stderr) <- readHooky [cmd, "--all", "file.txt"]
-    code `shouldBe` ExitFailure 1
-    stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
-
-  it "stashes intent-to-add files" $ do
-    withGitRepo $ \git -> do
-      writeFile ".hooky.kdl" hookyConfigEofFixer
-      writeFile "bad.txt" "bad"
-      git.exec ["add", ".hooky.kdl"]
-      git.exec ["add", "-N", "bad.txt"]
-      let checkIntentToAdd = do
-            git.client.query ["diff-files", "--name-only", "--diff-filter=A"]
-              `shouldSatisfy` P.returns (P.eq "bad.txt")
-            readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
-      checkIntentToAdd
-      runHooky [cmd, "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
-      checkIntentToAdd
-
-  it "stashes untracked files" $ do
-    withGitRepo $ \git -> do
-      writeFile ".hooky.kdl" hookyConfigEofFixer
-      writeFile "bad.txt" "bad"
-      git.exec ["add", ".hooky.kdl"]
-      let checkUntracked = do
-            git.client.query ["ls-files", "--others", "--exclude-standard"]
-              `shouldSatisfy` P.returns (P.eq "bad.txt")
-            readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
-      checkUntracked
-      runHooky [cmd, "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
-      checkUntracked
-
-  it "error if .hooky.kdl is to be stashed" $ do
-    withGitRepo $ \git -> do
-      writeFile ".hooky.kdl" hookyConfigEofFixer
-      git.exec ["add", ".hooky.kdl"]
-      git.exec ["commit", "-m", "test"]
-      writeFile ".hooky.kdl" $ hookyConfigEofFixer <> "\n\n\n"
-      (code, _, stderr) <- readHooky [cmd, "--stash", "--staged"]
-      code `shouldBe` ExitFailure 1
-      stderr `shouldBe` ".hooky.kdl has changes, stage it first\n"
 
 runHooky :: [String] -> IO ExitCode
 runHooky args = do
