@@ -133,7 +133,6 @@ loadCLIOptions =
   parseCommand =
     Opt.hsubparser . mconcat . map mkCommand $
       [ cmdInstall
-      , cmdRunGit
       , cmdRun
       , cmdFix
       , cmdLint
