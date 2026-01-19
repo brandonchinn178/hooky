@@ -71,6 +71,7 @@ hook name_of_hook {
 ```
 
 * `command`: The command to run
+    * You're responsible for installing the necessary tools. [dotslash](https://dotslash-cli.com/docs) is a good way to automatically install binary tools.
     * Can be written without quotes, but quotes are needed if special characters like `/` or spaces are used
 * `check_args`: Additional arguments to pass when running in `check` mode
 * `fix_args`: Additional arguments to pass when running in `fix` mode
