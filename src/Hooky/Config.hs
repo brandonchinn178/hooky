@@ -89,7 +89,10 @@ loadRepoConfig path = do
   configFileExists <- doesFileExist path
   unless configFileExists $ do
     abort $ "Config file doesn't exist: " <> Text.pack path
-  either abort pure . parseRepoConfig =<< Text.readFile path
+  content <- Text.readFile path
+  case parseRepoConfig content of
+    Right config -> pure config
+    Left e -> abort $ "Could not parse config: " <> Text.pack path <> "\n" <> e
 
 parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
@@ -144,8 +147,10 @@ loadGlobalConfig = do
   hookyConfigDir <- getXdgDirectory XdgConfig "hooky"
   let path = hookyConfigDir </> "settings.kdl"
   exists <- doesFileExist path
-  config <- if exists then Text.readFile path else pure ""
-  either abort pure $ parseGlobalConfig config
+  content <- if exists then Text.readFile path else pure ""
+  case parseGlobalConfig content of
+    Right config -> pure config
+    Left e -> abort $ "Could not parse config: " <> Text.pack path <> "\n" <> e
 
 parseGlobalConfig :: Text -> Either Text GlobalConfig
 parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
