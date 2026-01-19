@@ -5,16 +5,28 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Hooky.Config (
   -- * Config
   Config (..),
   loadConfig,
+
+  -- * RepoConfig
   RepoConfig (..),
   HookConfig (..),
   PassFilesMode (..),
   LintRule (..),
   LintRuleRule (..),
+
+  -- * GlobalConfig
+  GlobalConfig (..),
+
+  -- ** RunMode
+  RunMode (..),
+  allRunModes,
+  parseRunMode,
+  renderRunMode,
 
   -- * Glob
   Glob (..),
@@ -30,6 +42,8 @@ import Data.Bifunctor qualified as Bifunctor
 import Data.List (partition, tails)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -37,28 +51,31 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (abort)
+import Hooky.Internal.Output (OutputFormat (..), parseOutputFormat)
 import KDL.Arrow qualified as KDL
-import System.Directory (doesFileExist)
+import System.Directory (XdgDirectory (..), doesFileExist, getXdgDirectory)
 import System.Environment (lookupEnv)
+import System.FilePath ((</>))
 
 data Config = Config
   { repoConfigPath :: FilePath
   , repo :: RepoConfig
+  , global :: GlobalConfig
   , skippedHooks :: Set Text
   }
   deriving (Show, Eq)
 
 loadConfig :: FilePath -> IO Config
 loadConfig repoConfigPath = do
-  configFileExists <- doesFileExist repoConfigPath
-  unless configFileExists $ do
-    abort $ "Config file doesn't exist: " <> Text.pack repoConfigPath
-  repo <- either abort pure . parseRepoConfig =<< Text.readFile repoConfigPath
+  global <- loadGlobalConfig
+  repo <- loadRepoConfig repoConfigPath
 
   let fromCSV = Text.splitOn "," . Text.pack
   skippedHooks <- Set.fromList . maybe [] fromCSV <$> lookupEnv "SKIP"
 
   pure Config{..}
+
+{----- RepoConfig -----}
 
 data RepoConfig = RepoConfig
   { files :: [Glob]
@@ -66,6 +83,13 @@ data RepoConfig = RepoConfig
   , lintRules :: [LintRule]
   }
   deriving (Show, Eq)
+
+loadRepoConfig :: FilePath -> IO RepoConfig
+loadRepoConfig path = do
+  configFileExists <- doesFileExist path
+  unless configFileExists $ do
+    abort $ "Config file doesn't exist: " <> Text.pack path
+  either abort pure . parseRepoConfig =<< Text.readFile path
 
 parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
@@ -99,6 +123,73 @@ instance KDL.DecodeNode HookConfig where
       fixArgs <- KDL.children $ KDL.argsAt "fix_args" -< ()
       passFiles <- KDL.children $ KDL.option PassFiles_XArgs $ KDL.argAt "pass_files" -< ()
       returnA -< (\name files -> HookConfig{..})
+
+{----- GlobalConfig -----}
+
+data GlobalConfig = GlobalConfig
+  { mode :: RunMode
+  , format :: OutputFormat
+  , maxOutputLines :: Int
+  , maxParallelHooks :: Int
+  }
+  deriving (Show, Eq)
+
+loadGlobalConfig :: IO GlobalConfig
+loadGlobalConfig = do
+  hookyConfigDir <- getXdgDirectory XdgConfig "hooky"
+  let path = hookyConfigDir </> "settings.kdl"
+  exists <- doesFileExist path
+  config <- if exists then Text.readFile path else pure ""
+  either abort pure $ parseGlobalConfig config
+
+parseGlobalConfig :: Text -> Either Text GlobalConfig
+parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
+ where
+  decoder = KDL.document $ proc () -> do
+    mFlags <- KDL.optional . KDL.nodeWith "flags" $ KDL.children decodeFlags -< ()
+    let mode = getFlag Mode_Check mFlags $ \(x, _) -> x
+    let format = getFlag Format_Minimal mFlags $ \(_, x) -> x
+    maxOutputLines <- KDL.option 5 $ KDL.argAt "max_output_lines" -< ()
+    maxParallelHooks <- KDL.option 5 $ KDL.argAt "max_parallel_hooks" -< ()
+    returnA -< GlobalConfig{..}
+  decodeFlags = proc () -> do
+    mode <- KDL.optional $ KDL.argAt "--mode" -< ()
+    format <- KDL.optional $ KDL.argAt "--format" -< ()
+    returnA -< (mode, format)
+  getFlag def mFlags f = fromMaybe def $ mFlags >>= f
+
+{----- RunMode -----}
+
+data RunMode = Mode_Check | Mode_Fix | Mode_FixAdd
+  deriving (Show, Eq, Enum, Bounded)
+
+allRunModes :: [RunMode]
+allRunModes = [minBound .. maxBound]
+
+parseRunMode :: Text -> Maybe RunMode
+parseRunMode = flip Map.lookup x
+ where
+  x = Map.fromList [(renderRunMode m, m) | m <- allRunModes]
+
+renderRunMode :: RunMode -> Text
+renderRunMode = \case
+  Mode_Check -> "check"
+  Mode_Fix -> "fix"
+  Mode_FixAdd -> "fix-add"
+
+instance KDL.DecodeValue RunMode where
+  valueDecoder = KDL.withDecoder KDL.valueDecoder $ \s ->
+    case parseRunMode s of
+      Nothing -> KDL.failM $ "Invalid --mode: " <> s
+      Just mode -> pure mode
+
+{----- OutputFormat -----}
+
+instance KDL.DecodeValue OutputFormat where
+  valueDecoder = KDL.withDecoder KDL.valueDecoder $ \s ->
+    case parseOutputFormat s of
+      Nothing -> KDL.failM $ "Invalid --format: " <> s
+      Just format -> pure format
 
 {----- LintRule -----}
 

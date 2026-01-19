@@ -28,8 +28,8 @@ spec = do
             case Text.breakOn "duration: " s of
               (_, "") -> s
               (pre, post) -> pre <> "duration: XX.XXXs" <> scrubDuration (Text.dropWhile (/= '\n') post)
-      -- https://github.com/brandonchinn178/hooky/issues/3
-      skip "until we can set maxParallelHooks = 1" . it ("outputs " <> flag) $ do
+      -- https://github.com/brandonchinn178/hooky/issues/9
+      skip "until we can set --max-parallel-hooks 1" . it ("outputs " <> flag) $ do
         (code, stdout, _) <-
           withGitRepo $ \git -> do
             writeFile ".hooky.kdl" $

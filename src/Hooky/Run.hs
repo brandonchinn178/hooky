@@ -10,12 +10,6 @@ module Hooky.Run (
 
   -- * FileTargets
   FileTargets (..),
-
-  -- * RunMode
-  RunMode (..),
-  allRunModes,
-  parseRunMode,
-  renderRunMode,
 ) where
 
 import Control.Concurrent (threadDelay)
@@ -24,7 +18,6 @@ import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Map qualified as Map
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -40,9 +33,11 @@ import Hooky.Config (
   Config,
   HookConfig,
   PassFilesMode (..),
+  RunMode (..),
   matchesGlobs,
  )
 import Hooky.Config qualified as Config (Config (..))
+import Hooky.Config qualified as GlobalConfig (GlobalConfig (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Config qualified as RepoConfig (RepoConfig (..))
 import Hooky.Error (HookyError, abort)
@@ -103,15 +98,14 @@ runHooks git config options = do
     files <- resolveTargets git options.fileTargets
     let hooks = map (resolveHook config options files) config.repo.hooks
     let checkDiffs = initDiffChecker git options.mode
-    results <- runHookCmds checkDiffs options.format maxHooks hooks
+    results <- runHookCmds config checkDiffs options.format maxHooks hooks
     printSummary results
     when (any ((== HookFailed) . snd) results) $ do
       exitFailure
  where
-  maxParallelHooks = 5 -- TODO: make configurable - https://github.com/brandonchinn178/hooky/issues/3
   maxHooks =
     case options.mode of
-      Mode_Check -> maxParallelHooks
+      Mode_Check -> config.global.maxParallelHooks
       Mode_Fix
       Mode_FixAdd -> 1
 
@@ -205,15 +199,14 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
       unless (null itaFiles) $ do
         git.exec $ ["add", "--intent-to-add", "--"] <> itaFiles
 
-runHookCmds :: DiffChecker -> OutputFormat -> Int -> [HookCmd] -> IO [(Text, HookResult)]
-runHookCmds checkDiffs format maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
+runHookCmds :: Config -> DiffChecker -> OutputFormat -> Int -> [HookCmd] -> IO [(Text, HookResult)]
+runHookCmds config checkDiffs format maxHooks = displayConsoleRegions . pooledMapConcurrentlyN maxHooks run
  where
-  maxOutputLines = 5 -- TODO: make configurable - https://github.com/brandonchinn178/hooky/issues/3
   run hook =
     withConsoleRegion Region.Linear $ \headerRegion ->
       withConsoleRegion (Region.InLine headerRegion) $ \outputRegion ->
         withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
-          hookOutput <- initHookOutput maxOutputLines $ \buf ->
+          hookOutput <- initHookOutput config.global.maxOutputLines $ \buf ->
             setConsoleRegion outputRegion $ renderHookInProgressBody buf
           hookOutput.log $ "Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args
           (result, duration) <- withDuration $ runHook checkDiffs hookOutput hook
@@ -362,25 +355,6 @@ resolveTargets git = \case
   FilesStaged -> git.getChangedFiles ["--staged"]
   FilesAll -> git.getFiles
   FilesPrev -> git.getChangedFiles ["HEAD~1..HEAD"]
-
-{----- RunMode -----}
-
-data RunMode = Mode_Check | Mode_Fix | Mode_FixAdd
-  deriving (Show, Eq, Enum, Bounded)
-
-allRunModes :: [RunMode]
-allRunModes = [minBound .. maxBound]
-
-parseRunMode :: Text -> Maybe RunMode
-parseRunMode = flip Map.lookup x
- where
-  x = Map.fromList [(renderRunMode m, m) | m <- allRunModes]
-
-renderRunMode :: RunMode -> Text
-renderRunMode = \case
-  Mode_Check -> "check"
-  Mode_Fix -> "fix"
-  Mode_FixAdd -> "fix-add"
 
 {----- HookOutput -----}
 

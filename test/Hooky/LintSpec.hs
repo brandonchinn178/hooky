@@ -257,5 +257,6 @@ defaultConfig rule =
           , hooks = []
           , lintRules = [LintRule rule [toGlob "*"]]
           }
+    , global = error "GlobalConfig not used"
     , skippedHooks = mempty
     }

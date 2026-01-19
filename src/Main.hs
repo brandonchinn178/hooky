@@ -21,7 +21,15 @@ import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Data.Typeable (typeOf, typeRep)
 import Data.Version (showVersion)
-import Hooky.Config (Config (..), loadConfig)
+import Hooky.Config (
+  Config (..),
+  GlobalConfig (..),
+  RunMode (..),
+  allRunModes,
+  loadConfig,
+  parseRunMode,
+  renderRunMode,
+ )
 import Hooky.Error (abort, abortImpure)
 import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
@@ -38,11 +46,7 @@ import Hooky.Lint (
  )
 import Hooky.Run (
   FileTargets (..),
-  RunMode (..),
   RunOptions (..),
-  allRunModes,
-  parseRunMode,
-  renderRunMode,
   runHooks,
  )
 import Hooky.Utils.Git (GitClient (..), initGitClient)
@@ -269,9 +273,9 @@ instance IsCLICommand Cmd_RunGit where
   cliCommandRun cmd git config = do
     runHooks git config $
       RunOptions
-        { mode = fromMaybe Mode_Check cmd.mode
+        { mode = fromMaybe config.global.mode cmd.mode
         , fileTargets = FilesStaged
-        , format = fromMaybe Format_Minimal cmd.format
+        , format = fromMaybe config.global.format cmd.format
         , stash = True
         }
 
@@ -337,7 +341,7 @@ instance IsCLICommand Cmd_Run where
       RunOptions
         { mode = cmd.mode
         , fileTargets = cmd.fileTargets
-        , format = fromMaybe Format_Minimal cmd.format
+        , format = fromMaybe config.global.format cmd.format
         , stash = cmd.stash
         }
 
