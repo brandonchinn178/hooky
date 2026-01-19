@@ -209,6 +209,10 @@ hook eslint {
 }
 ```
 
+### Uses of Hooky in the wild
+
+See examples of Hooky configurations across GitHub: https://github.com/search?q=path%3A.hooky.kdl&type=code
+
 ## Comparison with other tools
 
 ### pre-commit
