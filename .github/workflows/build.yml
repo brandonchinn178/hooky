@@ -38,7 +38,7 @@ jobs:
           set -x
           case ${{ runner.os }} in
             (Linux) os=linux ;;
-            (macOS) os=osx ;;
+            (macOS) os=darwin ;;
             (*) echo 'Unknown OS' >&1; exit 1 ;;
           esac
           case ${{ runner.arch }} in
