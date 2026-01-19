@@ -7,7 +7,8 @@
 ╭─── FAIL hooky_fail (duration: XX.XXXs)
 │ ═══▶ Running: hooky lint
 │ file.fail:
-◈ - [end_of_file_fixer] file would be changed
+│ - [end_of_file_fixer] file would be changed
+◈
 ◈─── SKIP hooky_skip (duration: XX.XXXs)
 1 hook passed ✔
 1 hook failed ✘
@@ -20,7 +21,8 @@
 ╭─── FAIL hooky_fail (duration: XX.XXXs)
 │ ═══▶ Running: hooky lint
 │ file.fail:
-◈ - [end_of_file_fixer] file would be changed
+│ - [end_of_file_fixer] file would be changed
+◈
 1 hook passed ✔
 1 hook failed ✘
 1 hook skipped ≫
@@ -32,13 +34,16 @@
 ╭─── PASS hooky_pass (duration: XX.XXXs)
 │ ═══▶ Running: hooky lint
 │ Hooks passed:
-◈ - end_of_file_fixer
+│ - end_of_file_fixer
+◈
 ╭─── FAIL hooky_fail (duration: XX.XXXs)
 │ ═══▶ Running: hooky lint
 │ file.fail:
-◈ - [end_of_file_fixer] file would be changed
+│ - [end_of_file_fixer] file would be changed
+◈
 ╭─── SKIP hooky_skip (duration: XX.XXXs)
-◈ ═══▶ Running: hooky lint
+│ ═══▶ Running: hooky lint
+◈
 1 hook passed ✔
 1 hook failed ✘
 1 hook skipped ≫
