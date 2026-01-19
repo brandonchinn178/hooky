@@ -46,13 +46,12 @@ import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Config qualified as RepoConfig (RepoConfig (..))
 import Hooky.Error (HookyError, abort)
+import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
   OutputFormat (..),
-  outputLogLines,
   renderHookInProgressBody,
   renderHookInProgressHeader,
   renderHookReport,
-  renderLogLines,
  )
 import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
@@ -167,7 +166,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
         date <- Time.formatTime Time.defaultTimeLocale "%Y%m%d" <$> Time.getCurrentTime
         let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
         Text.writeFile stashFile diff
-        outputLogLines $ "Stashed changes to: " <> TextL.pack stashFile
+        Messages.info $ "Stashed changes to: " <> TextL.pack stashFile
         unless (null itaFiles) $ do
           git.exec $ ["rm", "--force", "--"] <> itaFiles -- Remove intent-to-add files; persisted in the diff
         git.clearChanges
@@ -184,12 +183,12 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
               ]
       try runGitApply >>= \case
         Right _ -> do
-          outputLogLines $ "Restored changes from: " <> TextL.pack stashFile
+          Messages.info $ "Restored changes from: " <> TextL.pack stashFile
         Left (_ :: HookyError) -> do
           case mode of
             Mode_Check
             Mode_Fix -> do
-                outputLogLines . TextL.unlines $
+                Messages.log . TextL.unlines $
                   [ "Stashed changes conflicted with hook modifications."
                   , "Run `hooky fix` manually and `git add` the desired changes."
                   , "Rolling back changes for now..."
@@ -198,7 +197,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
                 runGitApply
                 pure () -- no need to explicitly fail, since hooks should have failed
             Mode_FixAdd -> do
-              outputLogLines . TextL.unlines $
+              Messages.log . TextL.unlines $
                 [ "Stashed changes conflicted with fixed changes."
                 , "Fix conflicts after git finishes the commit."
                 ]
@@ -216,7 +215,7 @@ runHookCmds checkDiffs format maxHooks = displayConsoleRegions . pooledMapConcur
         withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
           hookOutput <- initHookOutput maxOutputLines $ \buf ->
             setConsoleRegion outputRegion $ renderHookInProgressBody buf
-          hookOutput.log ["Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args]
+          hookOutput.log $ "Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args
           (result, duration) <- withDuration $ runHook checkDiffs hookOutput hook
           when (shouldShowResult format result) $ do
             hookStdout <- hookOutput.getLines
@@ -387,7 +386,7 @@ renderRunMode = \case
 
 data HookOutput = HookOutput
   { onLine :: Text -> IO ()
-  , log :: [LazyText] -> IO ()
+  , log :: LazyText -> IO ()
   , getLines :: IO [LazyText]
   }
 
@@ -403,7 +402,7 @@ initHookOutput maxOutputLines renderBuf = do
   pure
     HookOutput
       { onLine = onLine . TextL.fromStrict
-      , log = mapM_ onLine . renderLogLines
+      , log = mapM_ (onLine . Term.yellow) . TextL.lines . Messages.render
       , getLines = reverse . fst <$> readIORef outputRef
       }
 
@@ -420,7 +419,7 @@ initDiffChecker git mode = \hookOutput action -> do
     _ | before == after -> do
       pure result
     Mode_Check -> do
-      hookOutput.log
+      hookOutput.log . TextL.unlines $
         [ "Files were unexpectedly modified."
         , "Running hooks with --mode=check should NOT modify files, since hooks are run in"
         , "parallel. Fix the commands in the hooky config to only modify files with"
@@ -428,10 +427,7 @@ initDiffChecker git mode = \hookOutput action -> do
         ]
       pure HookFailed
     Mode_Fix -> do
-      hookOutput.log
-        [ "Files were modified."
-        , "Run `git add` to stage the changes."
-        ]
+      hookOutput.log "Files were modified. Run `git add` to stage the changes."
       pure HookFailed
     Mode_FixAdd -> do
       modifiedFiles <- git.getChangedFiles []

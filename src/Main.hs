@@ -23,10 +23,10 @@ import Data.Typeable (typeOf, typeRep)
 import Data.Version (showVersion)
 import Hooky.Config (Config (..), loadConfig)
 import Hooky.Error (abort, abortImpure)
+import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
   OutputFormat (..),
   allOutputFormats,
-  outputLogLines,
   parseOutputFormat,
   renderOutputFormat,
  )
@@ -239,7 +239,7 @@ instance IsCLICommand Cmd_Install where
       when exists $ do
         let backup = fp <> ".bak"
         renameFile fp backup
-        outputLogLines . TextL.unlines $
+        Messages.log . TextL.unlines $
           [ "Found previously installed pre-commit hooks."
           , "Backed up to: " <> TextL.pack backup
           ]

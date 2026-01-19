@@ -6,10 +6,6 @@ module Hooky.Internal.Output (
   renderHookInProgressBody,
   renderHookReport,
 
-  -- * Hooky messages
-  renderLogLines,
-  outputLogLines,
-
   -- * Format
   OutputFormat (..),
   allOutputFormats,
@@ -22,7 +18,6 @@ import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.IO qualified as TextL
 import Hooky.Utils.Term qualified as Term
 
 renderHookStatus :: Text -> LazyText -> LazyText
@@ -58,7 +53,7 @@ renderHookInProgressBody = TextL.unlines . map ("│ " <>)
 renderHookReport :: Text -> LazyText -> [LazyText] -> LazyText -> LazyText
 renderHookReport name status output duration =
   TextL.intercalate "\n" $
-    (start <> "─── " <> renderHookStatus name status <> " " <> Term.yellow ("(duration: " <> duration <> ")"))
+    (start <> "─── " <> renderHookStatus name status <> " " <> Term.gray ("(duration: " <> duration <> ")"))
       : body
  where
   start = if null output then "◈" else "╭"
@@ -68,16 +63,6 @@ renderHookReport name status output duration =
       Just outputNE ->
         let (middle, end) = (NonEmpty.init outputNE, NonEmpty.last outputNE)
          in map ("│ " <>) middle <> ["◈ " <> end]
-
-renderLogLines :: [LazyText] -> [LazyText]
-renderLogLines = map Term.yellow . onHead ("═══▶ " <>)
- where
-  onHead f = \case
-    [] -> []
-    x : xs -> f x : xs
-
-outputLogLines :: LazyText -> IO ()
-outputLogLines = TextL.putStr . TextL.unlines . renderLogLines . TextL.lines
 
 {----- OutputFormat -----}
 

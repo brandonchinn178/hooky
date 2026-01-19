@@ -1,9 +1,12 @@
 module Hooky.Utils.Term (
   -- * Utilities for styling terminal output
+  TextWrapper,
   bold,
   green,
+  lightBlue,
   red,
   yellow,
+  gray,
   greenBG,
   redBG,
   yellowBG,
@@ -38,11 +41,17 @@ bold = wrapSGR [SetConsoleIntensity BoldIntensity]
 green :: TextWrapper
 green = wrapSGR [SetColor Foreground Vivid ANSI.Green]
 
+lightBlue :: TextWrapper
+lightBlue = wrapSGR [SetPaletteColor Foreground 81]
+
 red :: TextWrapper
 red = wrapSGR [SetColor Foreground Vivid ANSI.Red]
 
 yellow :: TextWrapper
 yellow = wrapSGR [SetColor Foreground Dull ANSI.Yellow]
+
+gray :: TextWrapper
+gray = wrapSGR [SetPaletteColor Foreground 8]
 
 greenBG :: TextWrapper
 greenBG = wrapSGR [SetColor Background Dull ANSI.Green]
