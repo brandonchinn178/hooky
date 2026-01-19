@@ -14,7 +14,15 @@ Features:
 
 ## Installation
 
-Download the appropriate binary from the GitHub release.
+### With Homebrew
+
+```shell
+brew install brandonchinn178/tap/hooky
+```
+
+### GitHub release
+
+Download the appropriate binary from the [GitHub releases page](https://github.com/brandonchinn178/hooky/releases).
 
 ## Usage
 
