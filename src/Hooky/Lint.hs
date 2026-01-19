@@ -22,6 +22,7 @@ module Hooky.Lint (
 
 import Control.Monad (forM, when)
 import Data.Bifunctor (first)
+import Data.ByteString qualified as ByteString
 import Data.Char (isSpace)
 import Data.Foldable (foldlM)
 import Data.Map (Map)
@@ -32,6 +33,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Config (
   Config (..),
@@ -122,11 +124,15 @@ runPerFileLintRules git options allLinters file =
       pure (Just file, results)
  where
   linters = [(rule, run) | (rule, LintActionPerFile run) <- allLinters]
-  readFileMaybe fp =
-    fmap (either (const Nothing) Just) $
+  readFileMaybe fp = do
+    result <-
       tryJust
         (\e -> if isDoesNotExistError e then Just e else Nothing)
-        (Text.readFile fp)
+        (ByteString.readFile fp)
+    pure $
+      case result of
+        Right bs | Right s <- Text.decodeUtf8' bs -> Just s
+        _ -> Nothing
 
   -- mapM that also threads state through the loop
   mapAndFoldM :: (Monad m) => (s -> a -> m (b, s)) -> s -> [a] -> m ([b], s)
