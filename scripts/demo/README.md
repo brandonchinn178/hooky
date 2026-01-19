@@ -5,6 +5,8 @@ Generate the GIF for the demo in the README.
 ## Quickstart
 
 ```shell
+stack build
+
 brew install vhs
-(cd scripts/demo/ && vhs demo.tape)
+scripts/demo/generate.sh
 ```
