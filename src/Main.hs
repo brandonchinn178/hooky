@@ -49,6 +49,7 @@ import Hooky.Run (
   RunOptions (..),
   runHooks,
  )
+import Hooky.Utils.Directory (PathType (..), getPathType)
 import Hooky.Utils.Git (GitClient (..), initGitClient)
 import Hooky.Utils.Term qualified as Term
 import Options.Applicative qualified as Opt
@@ -96,7 +97,7 @@ class IsCLICommand cmd where
 
 mkAction :: (IsCLICommand cmd) => Proxy cmd -> cmd -> CLICommandAction
 mkAction _ cmd git config = do
-  cmd' <- resolveFiles cmd
+  cmd' <- resolveFiles git cmd
   cliCommandRun cmd' git config
 
 loadCLIOptions :: IO CLIOptions
@@ -162,8 +163,8 @@ main = handleErrors $ do
 -- | Resolve files specified as arguments.
 --
 -- Expands `@file` arguments to files specified in the given file.
-resolveFiles :: (IsCLICommand cmd) => cmd -> IO cmd
-resolveFiles cmd =
+resolveFiles :: (IsCLICommand cmd) => GitClient -> cmd -> IO cmd
+resolveFiles git cmd =
   case cliCommandFiles cmd of
     Nothing -> pure cmd
     Just (files, setFiles) -> do
@@ -173,11 +174,11 @@ resolveFiles cmd =
   resolve = fmap concat . mapM resolveFile
   resolveFile = \case
     '@' : file -> map Text.unpack . Text.lines <$> Text.readFile file
-    file -> do
-      exist <- doesFileExist file
-      unless exist $ do
-        abort $ "File does not exist: " <> Text.pack file
-      pure [file]
+    path ->
+      getPathType path >>= \case
+        Just PathType_File -> pure [path]
+        Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
+        Nothing -> abort $ "File does not exist: " <> Text.pack path
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
@@ -442,8 +443,8 @@ parseFilesCLI =
   Opt.some . Opt.strArgument . mconcat $
     [ Opt.metavar "FILES"
     , Opt.help . concat $
-        [ "Files to run on. Any files of the form `@f.ext` will be expanded to "
-        , "the list of files in it, where `@f.ext` contains a filepath per line."
+        [ "Files to run on. If a directory is specified, recursively finds all files."
+        , "If `@path/to/f.ext` is specified, all files in `path/to/f.ext` will be used."
         ]
     ]
 
