@@ -291,7 +291,8 @@ cmdRun =
     }
 
 data Cmd_Run = Cmd_Run
-  { fileTargets :: FileTargets
+  { mode :: RunMode
+  , fileTargets :: FileTargets
   , stash :: Bool
   , format :: OutputFormat
   }
@@ -334,24 +335,21 @@ instance IsCLICommand Cmd_Run where
             case mFileTargets of
               Nothing -> (FilesStaged, True)
               Just ft -> (ft, stashFlag)
-       in Cmd_Run{..}
+       in Cmd_Run{mode = Mode_Check, ..}
 
   cliCommandRun cmd git (_, config) = do
-    runHooks git config $ toRunOptions Mode_Check cmd
+    runHooks git config $
+      RunOptions
+        { mode = cmd.mode
+        , fileTargets = cmd.fileTargets
+        , format = cmd.format
+        , stash = cmd.stash
+        }
 
   cliCommandFiles Cmd_Run{..} =
     case fileTargets of
       FilesGiven files -> Just (files, \files' -> Cmd_Run{fileTargets = FilesGiven files', ..})
       _ -> Nothing
-
-toRunOptions :: RunMode -> Cmd_Run -> RunOptions
-toRunOptions mode cmd =
-  RunOptions
-    { mode = mode
-    , fileTargets = cmd.fileTargets
-    , format = cmd.format
-    , stash = cmd.stash
-    }
 
 {----- hooky fix ------}
 
@@ -366,11 +364,10 @@ cmdFix =
 newtype Cmd_Fix = Cmd_Fix Cmd_Run
 
 instance IsCLICommand Cmd_Fix where
-  cliCommandParse = Cmd_Fix <$> cliCommandParse
-
-  cliCommandRun (Cmd_Fix cmd) git (_, config) = do
-    runHooks git config $ toRunOptions Mode_Fix cmd
-
+  cliCommandParse = update <$> cliCommandParse
+   where
+    update Cmd_Run{..} = Cmd_Fix Cmd_Run{mode = Mode_Fix, ..}
+  cliCommandRun = coerce $ cliCommandRun @Cmd_Run
   cliCommandFiles = coerce $ cliCommandFiles @Cmd_Run
 
 {----- hooky lint ------}
