@@ -95,10 +95,15 @@ parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
   decoder = KDL.document $ proc () -> do
-    fileGlobs <- KDL.argsAt "files" -< ()
+    mDefaults <- KDL.optional . KDL.nodeWith "defaults" $ KDL.children defaultsDecoder -< ()
+    let fileGlobs = getDefault [] mDefaults $ \(x) -> x
     hooks <- KDL.many $ KDL.node "hook" -< ()
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
     returnA -< RepoConfig{..}
+  defaultsDecoder = proc () -> do
+    fileGlobs <- KDL.optional $ KDL.argsAt "files" -< ()
+    returnA -< (fileGlobs)
+  getDefault def mFlags f = fromMaybe def $ mFlags >>= f
 
 data HookConfig = HookConfig
   { name :: Text
@@ -146,13 +151,13 @@ parseGlobalConfig :: Text -> Either Text GlobalConfig
 parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
   decoder = KDL.document $ proc () -> do
-    mFlags <- KDL.optional . KDL.nodeWith "flags" $ KDL.children decodeFlags -< ()
+    mFlags <- KDL.optional . KDL.nodeWith "flags" $ KDL.children flagsDecoder -< ()
     let mode = getFlag Mode_Check mFlags $ \(x, _) -> x
     let format = getFlag Format_Minimal mFlags $ \(_, x) -> x
     maxOutputLines <- KDL.option 5 $ KDL.argAt "max_output_lines" -< ()
     maxParallelHooks <- KDL.option 5 $ KDL.argAt "max_parallel_hooks" -< ()
     returnA -< GlobalConfig{..}
-  decodeFlags = proc () -> do
+  flagsDecoder = proc () -> do
     mode <- KDL.optional $ KDL.argAt "--mode" -< ()
     format <- KDL.optional $ KDL.argAt "--format" -< ()
     returnA -< (mode, format)

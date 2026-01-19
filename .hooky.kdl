@@ -1,4 +1,6 @@
-files !*.snap.md
+defaults {
+    files !*.snap.md
+}
 
 hook hooky {
     command hooky lint {
