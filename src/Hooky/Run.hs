@@ -19,6 +19,7 @@ import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -80,6 +81,7 @@ import UnliftIO.Temporary (withSystemTempFile)
 
 data RunOptions = RunOptions
   { mode :: RunMode
+  , hooksToRun :: Maybe (Set Text)
   , fileTargets :: FileTargets
   , format :: OutputFormat
   , stash :: Bool
@@ -96,7 +98,11 @@ runHooks :: GitClient -> Config -> RunOptions -> IO ()
 runHooks git config options = do
   (if options.stash then withStash git options.mode else id) $ do
     files <- resolveTargets git options.fileTargets
-    let hooks = map (resolveHook config options files) config.repo.hooks
+    let hooks =
+          [ resolveHook config options files hook
+          | hook <- config.repo.hooks
+          , maybe True (hook.name `Set.member`) options.hooksToRun
+          ]
     let checkDiffs = initDiffChecker git options.mode
     results <- runHookCmds config checkDiffs options.format maxHooks hooks
     printSummary results

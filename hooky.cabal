@@ -58,6 +58,7 @@ executable hooky
     Paths_hooky
   build-depends:
       base
+    , containers
     , directory
     , filepath
     , hooky

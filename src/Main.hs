@@ -15,6 +15,9 @@ import Control.Monad (guard, unless, when)
 import Data.Coerce (coerce)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Proxy (Proxy (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Data.Text.Lazy qualified as TextL
@@ -274,6 +277,7 @@ instance IsCLICommand Cmd_RunGit where
     runHooks git config $
       RunOptions
         { mode = fromMaybe config.global.mode cmd.mode
+        , hooksToRun = Nothing
         , fileTargets = FilesStaged
         , format = fromMaybe config.global.format cmd.format
         , stash = True
@@ -291,6 +295,7 @@ cmdRun =
 
 data Cmd_Run = Cmd_Run
   { mode :: RunMode
+  , hooksToRun :: Maybe (Set Text)
   , fileTargets :: FileTargets
   , stash :: Bool
   , format :: Maybe OutputFormat
@@ -298,6 +303,13 @@ data Cmd_Run = Cmd_Run
 
 instance IsCLICommand Cmd_Run where
   cliCommandParse = do
+    hooksToRun <-
+      Opt.optional . fmap Set.fromList . Opt.some $
+        Opt.strOption . mconcat $
+          [ Opt.long "hook"
+          , Opt.short 'k'
+          , Opt.help "Hook(s) to run (defaults to all hooks)"
+          ]
     mFileTargets <-
       cliOneOfOptional $
         [ FilesGiven <$> parseFilesCLI
@@ -340,6 +352,7 @@ instance IsCLICommand Cmd_Run where
     runHooks git config $
       RunOptions
         { mode = cmd.mode
+        , hooksToRun = cmd.hooksToRun
         , fileTargets = cmd.fileTargets
         , format = fromMaybe config.global.format cmd.format
         , stash = cmd.stash
