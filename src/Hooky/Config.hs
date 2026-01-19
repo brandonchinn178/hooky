@@ -144,10 +144,13 @@ data GlobalConfig = GlobalConfig
 
 loadGlobalConfig :: IO GlobalConfig
 loadGlobalConfig = do
+  useGlobal <- not . maybe False (== "1") <$> lookupEnv "HOOKY_NO_GLOBAL"
+
   hookyConfigDir <- getXdgDirectory XdgConfig "hooky"
   let path = hookyConfigDir </> "settings.kdl"
   exists <- doesFileExist path
-  content <- if exists then Text.readFile path else pure ""
+
+  content <- if useGlobal && exists then Text.readFile path else pure ""
   case parseGlobalConfig content of
     Right config -> pure config
     Left e -> abort $ "Could not parse config: " <> Text.pack path <> "\n" <> e
