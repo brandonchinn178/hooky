@@ -72,12 +72,12 @@ data OutputFormat = Format_Minimal | Format_Full | Format_Verbose
 allOutputFormats :: [OutputFormat]
 allOutputFormats = [minBound .. maxBound]
 
-parseOutputFormat :: String -> Maybe OutputFormat
+parseOutputFormat :: Text -> Maybe OutputFormat
 parseOutputFormat = flip Map.lookup x
  where
   x = Map.fromList [(renderOutputFormat m, m) | m <- allOutputFormats]
 
-renderOutputFormat :: OutputFormat -> String
+renderOutputFormat :: OutputFormat -> Text
 renderOutputFormat = \case
   Format_Minimal -> "minimal"
   Format_Full -> "full"

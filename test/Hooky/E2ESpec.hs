@@ -23,7 +23,7 @@ spec = do
     hookyRunSpec "run"
 
     forM_ allOutputFormats $ \format -> do
-      let flag = "--format=" <> renderOutputFormat format
+      let flag = Text.unpack $ "--format=" <> renderOutputFormat format
           scrubDuration s =
             case Text.breakOn "duration: " s of
               (_, "") -> s

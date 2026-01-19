@@ -371,12 +371,12 @@ data RunMode = Mode_Check | Mode_Fix | Mode_FixAdd
 allRunModes :: [RunMode]
 allRunModes = [minBound .. maxBound]
 
-parseRunMode :: String -> Maybe RunMode
+parseRunMode :: Text -> Maybe RunMode
 parseRunMode = flip Map.lookup x
  where
   x = Map.fromList [(renderRunMode m, m) | m <- allRunModes]
 
-renderRunMode :: RunMode -> String
+renderRunMode :: RunMode -> Text
 renderRunMode = \case
   Mode_Check -> "check"
   Mode_Fix -> "fix"

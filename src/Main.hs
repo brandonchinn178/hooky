@@ -199,29 +199,31 @@ cmdInstall =
     }
 
 data Cmd_Install = Cmd_Install
-  { runGitOpts :: Cmd_RunGit
+  { mode :: Maybe RunMode
+  , format :: Maybe OutputFormat
   }
 
 instance IsCLICommand Cmd_Install where
   cliCommandParse = do
-    runGitOpts <- cliCommandParse
+    mode <- parseRunModeCLI
+    format <- parseFormatCLI
     pure Cmd_Install{..}
   cliCommandRun cmd git config = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
-    exe <- getExecutablePath
+    exe <- Text.pack <$> getExecutablePath
+    let configPath = Text.pack config.repoConfigPath
     Text.writeFile hookFile . Text.unlines $
-      [ Text.unwords $
-          [ "exec"
-          , quote . Text.pack $ exe
-          , "__git"
-          , "--config"
-          , quote . Text.pack $ config.repoConfigPath
-          , "--mode"
-          , quote . Text.pack $ renderRunMode cmd.runGitOpts.mode
-          , "--format"
-          , quote . Text.pack $ renderOutputFormat cmd.runGitOpts.format
+      [ Text.unwords . concat $
+          [ ["exec", quote exe, "__git"]
+          , ["--config", quote configPath]
+          , case cmd.mode of
+              Just mode -> ["--mode", quote $ renderRunMode mode]
+              Nothing -> []
+          , case cmd.format of
+              Just format -> ["--format", quote $ renderOutputFormat format]
+              Nothing -> []
           ]
       ]
     makeExecutable hookFile
@@ -255,8 +257,8 @@ cmdRunGit =
     }
 
 data Cmd_RunGit = Cmd_RunGit
-  { mode :: RunMode
-  , format :: OutputFormat
+  { mode :: Maybe RunMode
+  , format :: Maybe OutputFormat
   }
 
 instance IsCLICommand Cmd_RunGit where
@@ -267,9 +269,9 @@ instance IsCLICommand Cmd_RunGit where
   cliCommandRun cmd git config = do
     runHooks git config $
       RunOptions
-        { mode = cmd.mode
+        { mode = fromMaybe Mode_Check cmd.mode
         , fileTargets = FilesStaged
-        , format = cmd.format
+        , format = fromMaybe Format_Minimal cmd.format
         , stash = True
         }
 
@@ -287,7 +289,7 @@ data Cmd_Run = Cmd_Run
   { mode :: RunMode
   , fileTargets :: FileTargets
   , stash :: Bool
-  , format :: OutputFormat
+  , format :: Maybe OutputFormat
   }
 
 instance IsCLICommand Cmd_Run where
@@ -335,7 +337,7 @@ instance IsCLICommand Cmd_Run where
       RunOptions
         { mode = cmd.mode
         , fileTargets = cmd.fileTargets
-        , format = cmd.format
+        , format = fromMaybe Format_Minimal cmd.format
         , stash = cmd.stash
         }
 
@@ -442,23 +444,20 @@ parseFilesCLI =
         ]
     ]
 
-parseRunModeCLI :: Opt.Parser RunMode
-parseRunModeCLI = do
-  let modes = uncommas $ map renderRunMode allRunModes
-      uncommas = Text.unpack . Text.intercalate ", " . map Text.pack
-  fmap (fromMaybe Mode_Check) . Opt.optional $
-    Opt.option (Opt.maybeReader parseRunMode) . mconcat $
-      [ Opt.long "mode"
-      , Opt.help $ "Mode to run hooky in during git hooks. One of: " <> modes
-      ]
-
-parseFormatCLI :: Opt.Parser OutputFormat
-parseFormatCLI =
-  fmap (fromMaybe Format_Minimal) . Opt.optional $
-    Opt.option (Opt.maybeReader parseOutputFormat) . mconcat $
-      [ Opt.long "format"
-      , Opt.help $ "Format of output. One of: " <> formats
-      ]
+parseRunModeCLI :: Opt.Parser (Maybe RunMode)
+parseRunModeCLI =
+  Opt.optional . Opt.option (Opt.maybeReader (parseRunMode . Text.pack)) . mconcat $
+    [ Opt.long "mode"
+    , Opt.help . Text.unpack $ "Mode to run hooky in during git hooks. One of: " <> modes
+    ]
  where
-  formats = uncommas $ map renderOutputFormat allOutputFormats
-  uncommas = Text.unpack . Text.intercalate ", " . map Text.pack
+  modes = Text.intercalate ", " $ map renderRunMode allRunModes
+
+parseFormatCLI :: Opt.Parser (Maybe OutputFormat)
+parseFormatCLI =
+  Opt.optional . Opt.option (Opt.maybeReader (parseOutputFormat . Text.pack)) . mconcat $
+    [ Opt.long "format"
+    , Opt.help . Text.unpack $ "Format of output. One of: " <> formats
+    ]
+ where
+  formats = Text.intercalate ", " $ map renderOutputFormat allOutputFormats
