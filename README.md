@@ -238,3 +238,19 @@ Other notable differences:
 ### prek
 
 [prek](https://prek.j178.dev/) is essentially a reimplementation of [`pre-commit`](https://pre-commit.com), so it inherits the same issues.
+
+### lefthook
+
+[lefthook](https://lefthook.dev) has a similar philosophy as Hooky around only specifying commands to run.
+
+The biggest difference between Hooky and lefthook is Hooky natively distinguishes between check and fix modes. You commit to the repo how a given linter checks and fixes, and each developer decides for themselves whether they want the git hook to only check without modification, or to also autofix. Hooky will fail to commit if anything is fixed (unless you run in the `fix-add` mode) and displays a message on adding the changes to your commit. Without `stage_fixed`, lefthook will simply leave the changes on disk and continue the commit.
+
+In general, Hooky also aims to be much more minimal:
+* lefthook always shows the output of the command that was run, whereas Hooky only shows the output for failed commands by default
+* lefthook's configuration is much more complex. It also supports configuring general tasks, whereas Hooky focuses only on managing git hook commands. Your project probably already has general task runners like `Makefile` or `pyproject.toml`/`package.json` scripts.
+
+Other notable differences:
+* Hooky comes with some useful linters out-of-the-box like checking trailing whitespace, for convenience.
+* Hooky stashes partially staged changes, which ensures that when a linter runs on a file, it will see exactly the content that's going into the commit and not lint unstaged changes.
+* Hooky shows the output of a linter while it's running, so users have visibility into what's taking a long time. lefthook only shows output at the end.
+* Hooky supports passing the modified files to the command as a response file (`@files.txt`), so that a long list of files still only invokes the command once, and the command can read all the files from there (if it supports it).
