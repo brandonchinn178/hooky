@@ -226,15 +226,23 @@ instance IsCLICommand Cmd_Install where
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
+    let useAbsolute = config.global.useAbsolute || cmd.useAbsolute
     hookyExe <-
-      if config.global.useAbsolute || cmd.useAbsolute
+      if useAbsolute
         then Text.pack <$> getExecutablePath
         else pure "hooky"
 
     let configPath = Text.pack config.repoConfigPath
     Text.writeFile hookFile . Text.unlines $
-      [ Text.unwords . concat $
-          [ ["exec", hookyExe, "__git"]
+      [ "hooky_exe=" <> quote hookyExe
+      , "if ! command -v \"$hooky_exe\" 2>&1 >/dev/null; then"
+      , if useAbsolute
+          then "  echo >&2 \"Could not find hooky executable: ${hooky_exe}\""
+          else "  echo >&2 'Could not find hooky executable, is it on PATH?'"
+      , "  exit 1"
+      , "fi"
+      , Text.unwords . concat $
+          [ ["exec \"$hooky_exe\" __git"]
           , ["--config", quote configPath]
           , case cmd.mode of
               Just mode -> ["--mode", quote $ renderRunMode mode]
