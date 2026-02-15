@@ -66,6 +66,7 @@ import System.Directory (
   setPermissions,
  )
 import System.Directory qualified as Permissions (Permissions (..))
+import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO (stderr)
@@ -204,24 +205,36 @@ cmdInstall =
     , cmdType = Proxy @Cmd_Install
     }
 
+-- Any flags here should probably be in GlobalConfig too.
 data Cmd_Install = Cmd_Install
   { mode :: Maybe RunMode
   , format :: Maybe OutputFormat
+  , useAbsolute :: Bool
   }
 
 instance IsCLICommand Cmd_Install where
   cliCommandParse = do
     mode <- parseRunModeCLI
     format <- parseFormatCLI
+    useAbsolute <-
+      Opt.switch . mconcat $
+        [ Opt.long "absolute"
+        , Opt.help "Whether to install the absolute path to hooky"
+        ]
     pure Cmd_Install{..}
   cliCommandRun cmd git config = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
+    hookyExe <-
+      if config.global.useAbsolute || cmd.useAbsolute
+        then Text.pack <$> getExecutablePath
+        else pure "hooky"
+
     let configPath = Text.pack config.repoConfigPath
     Text.writeFile hookFile . Text.unlines $
       [ Text.unwords . concat $
-          [ ["exec", "hooky", "__git"]
+          [ ["exec", hookyExe, "__git"]
           , ["--config", quote configPath]
           , case cmd.mode of
               Just mode -> ["--mode", quote $ renderRunMode mode]
