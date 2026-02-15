@@ -270,6 +270,7 @@ lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
 lint_EndOfFileFixer :: LintAction
 lint_EndOfFileFixer = LintActionPerFile $ \_ _ contents -> do
   case spanEnd (== '\n') contents of
+    _ | Text.null contents -> pure (LintSuccess, contents)
     (_, suf) | Text.compareLength suf 1 == EQ -> pure (LintSuccess, contents)
     (stripped, _) -> pure (LintFixed, stripped <> "\n")
 
