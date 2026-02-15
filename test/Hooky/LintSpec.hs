@@ -140,6 +140,14 @@ spec = do
           runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` True
 
+    it "succeeds when file is empty" $ do
+      report <-
+        withGitRepo $ \git -> do
+          writeFile "foo.txt" ""
+          git.exec ["add", "foo.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt"]
+      lintReportSuccess report `shouldBe` True
+
     it "fails when file has no trailing newlines" $ do
       report <-
         withGitRepo $ \git -> do
