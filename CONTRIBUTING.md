@@ -19,4 +19,7 @@ stack exec -- hooky run ...
 1. Publish GitHub release
     * https://github.com/brandonchinn178/hooky/releases
 1. Update homebrew formula
-    * `brew bump-formula-pr brandonchinn178/tap/hooky --version $VERSION`
+    * `brew bump-formula-pr brandonchinn178/tap/hooky --version $VERSION --write-only`
+    * Commit changes on a new branch + push
+    * Make PR
+    * After CI passes, add the `pr-pull` label
