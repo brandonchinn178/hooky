@@ -10,7 +10,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Internal.Output (allOutputFormats, renderOutputFormat)
 import Hooky.TestUtils.Git (withGitRepo)
-import Hooky.TestUtils.Hooky (HookyExe (..))
+import Hooky.TestUtils.Hooky (HookyExe (..), withHookyOnPATH)
 import Skeletest
 import Skeletest.Predicate qualified as P
 import System.Exit (ExitCode (..))
@@ -19,6 +19,23 @@ import System.Process qualified as Process
 
 spec :: Spec
 spec = do
+  describe "git commit" $ do
+    it "runs hooky" . withHookyOnPATH . withGitRepo $ \git -> do
+      writeFile ".hooky.kdl" hookyConfigEofFixer
+      writeFile "good.txt" "good\n"
+      writeFile "bad.txt" "bad"
+      runHooky ["install"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+      git.exec ["add", ".hooky.kdl", "good.txt", "bad.txt"]
+      (code0, _, stderr0) <- git.run ["commit", "-m", "initial commit"]
+      code0 `shouldBe` ExitFailure 1
+      stderr0 `shouldSatisfy` P.hasInfix "1 hook failed"
+
+      writeFile "bad.txt" "bad\n"
+      git.exec ["add", "bad.txt"]
+      (code1, _, stderr1) <- git.run ["commit", "-m", "commit"]
+      code1 `shouldBe` ExitSuccess
+      stderr1 `shouldSatisfy` P.hasInfix "1 hook passed"
+
   describe "hooky run" $ do
     it "defaults to --stash --staged" $ do
       withGitRepo $ \git -> do
@@ -47,8 +64,8 @@ spec = do
         git.exec ["add", ".hooky.kdl"]
         git.exec ["add", "-N", "bad.txt"]
         let checkIntentToAdd = do
-              git.client.query ["diff-files", "--name-only", "--diff-filter=A"]
-                `shouldSatisfy` P.returns (P.eq "bad.txt")
+              (_, stdout, _) <- git.run ["diff-files", "--name-only", "--diff-filter=A"]
+              stdout `shouldBe` "bad.txt"
               readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
         checkIntentToAdd
         runHooky ["run", "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
@@ -60,8 +77,8 @@ spec = do
         writeFile "bad.txt" "bad"
         git.exec ["add", ".hooky.kdl"]
         let checkUntracked = do
-              git.client.query ["ls-files", "--others", "--exclude-standard"]
-                `shouldSatisfy` P.returns (P.eq "bad.txt")
+              (_, stdout, _) <- git.run ["ls-files", "--others", "--exclude-standard"]
+              stdout `shouldBe` "bad.txt"
               readFile "bad.txt" `shouldSatisfy` P.returns (P.eq "bad")
         checkUntracked
         runHooky ["run", "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
