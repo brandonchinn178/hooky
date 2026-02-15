@@ -66,7 +66,6 @@ import System.Directory (
   setPermissions,
  )
 import System.Directory qualified as Permissions (Permissions (..))
-import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO (stderr)
@@ -219,11 +218,10 @@ instance IsCLICommand Cmd_Install where
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
-    exe <- Text.pack <$> getExecutablePath
     let configPath = Text.pack config.repoConfigPath
     Text.writeFile hookFile . Text.unlines $
       [ Text.unwords . concat $
-          [ ["exec", quote exe, "__git"]
+          [ ["exec", "hooky", "__git"]
           , ["--config", quote configPath]
           , case cmd.mode of
               Just mode -> ["--mode", quote $ renderRunMode mode]
