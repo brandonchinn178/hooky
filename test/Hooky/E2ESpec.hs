@@ -10,7 +10,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Internal.Output (allOutputFormats, renderOutputFormat)
 import Hooky.TestUtils.Git (withGitRepo)
-import Hooky.TestUtils.Hooky (HookyExe (..), withHookyOnPATH)
+import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
 import Skeletest.Predicate qualified as P
 import System.Exit (ExitCode (..))
@@ -20,7 +20,8 @@ import System.Process qualified as Process
 spec :: Spec
 spec = do
   describe "git commit" $ do
-    it "runs hooky" . withHookyOnPATH . withGitRepo $ \git -> do
+    it "runs hooky" . withGitRepo $ \git -> do
+      Process.callProcess "bash" ["-c", "env | grep PATH"]
       writeFile ".hooky.kdl" hookyConfigEofFixer
       writeFile "good.txt" "good\n"
       writeFile "bad.txt" "bad"
