@@ -76,7 +76,7 @@ jobs:
           cp bin/hooky bin/hooky-${version}-${platform}
       -
         name: Run tests
-        run: TEST_HOOKY_EXE=$PWD/bin/hooky stack build --test
+        run: stack build --test
       -
         name: Run hooky
         run: |

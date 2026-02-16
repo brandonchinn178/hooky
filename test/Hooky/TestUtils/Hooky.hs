@@ -4,14 +4,13 @@ module Hooky.TestUtils.Hooky (
 
 import Skeletest
 import System.Directory (findExecutable)
-import System.Environment (lookupEnv)
 
 newtype HookyExe = HookyExe FilePath
 
 instance Fixture HookyExe where
   fixtureScope = PerSessionFixture
   fixtureAction = do
-    exe <- lookupEnv "TEST_HOOKY_EXE" >>= maybe findExe pure
+    exe <- findExe
     pure $ noCleanup (HookyExe exe)
    where
     findExe =
