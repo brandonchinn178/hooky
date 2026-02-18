@@ -10,9 +10,6 @@ foo-link.txt:
 ## check_case_conflict / fails when files conflict
 
 ```
-FOO.TXT:
-- [check_case_conflict] File conflicts with: foo.txt
-
 foo.txt:
 - [check_case_conflict] File conflicts with: FOO.TXT
 ```
