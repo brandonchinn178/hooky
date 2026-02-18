@@ -90,7 +90,7 @@ runAllFilesLintRules ::
 runAllFilesLintRules git allLinters = do
   files <- Set.fromList <$> git.getFiles
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
-    results <- run git files
+    results <- run git $ Set.filter (matchesGlobs rule.fileGlobs . Text.pack) files
     pure [(Just fp, [(rule.name, result)]) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
@@ -109,7 +109,6 @@ runPerFileLintRules git options allLinters file =
       (results, contents2) <-
         mapAndFoldM
           ( \contents (rule, run) -> do
-              -- TODO: check if file is valid for rule
               (result, contents') <- run git file contents
               pure $
                 if options.autofix
@@ -123,7 +122,11 @@ runPerFileLintRules git options allLinters file =
         Text.writeFile file contents2
       pure (Just file, results)
  where
-  linters = [(rule, run) | (rule, LintActionPerFile run) <- allLinters]
+  linters =
+    [ (rule, run)
+    | (rule, LintActionPerFile run) <- allLinters
+    , matchesGlobs rule.fileGlobs (Text.pack file)
+    ]
   readFileMaybe fp = do
     result <-
       tryJust
