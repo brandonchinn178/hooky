@@ -205,25 +205,44 @@ cmdInstall =
     , cmdType = Proxy @Cmd_Install
     }
 
+-- Any flags here should probably be in GlobalConfig too.
 data Cmd_Install = Cmd_Install
   { mode :: Maybe RunMode
   , format :: Maybe OutputFormat
+  , useAbsolute :: Bool
   }
 
 instance IsCLICommand Cmd_Install where
   cliCommandParse = do
     mode <- parseRunModeCLI
     format <- parseFormatCLI
+    useAbsolute <-
+      Opt.switch . mconcat $
+        [ Opt.long "absolute"
+        , Opt.help "Whether to install the absolute path to hooky"
+        ]
     pure Cmd_Install{..}
   cliCommandRun cmd git config = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
-    exe <- Text.pack <$> getExecutablePath
+    let useAbsolute = config.global.useAbsolute || cmd.useAbsolute
+    hookyExe <-
+      if useAbsolute
+        then Text.pack <$> getExecutablePath
+        else pure "hooky"
+
     let configPath = Text.pack config.repoConfigPath
     Text.writeFile hookFile . Text.unlines $
-      [ Text.unwords . concat $
-          [ ["exec", quote exe, "__git"]
+      [ "hooky_exe=" <> quote hookyExe
+      , "if ! command -v \"$hooky_exe\" 2>&1 >/dev/null; then"
+      , if useAbsolute
+          then "  echo >&2 \"Could not find hooky executable: ${hooky_exe}\""
+          else "  echo >&2 'Could not find hooky executable, is it on PATH?'"
+      , "  exit 1"
+      , "fi"
+      , Text.unwords . concat $
+          [ ["exec \"$hooky_exe\" __git"]
           , ["--config", quote configPath]
           , case cmd.mode of
               Just mode -> ["--mode", quote $ renderRunMode mode]

@@ -137,6 +137,7 @@ instance KDL.DecodeNode HookConfig where
 data GlobalConfig = GlobalConfig
   { mode :: RunMode
   , format :: OutputFormat
+  , useAbsolute :: Bool
   , maxOutputLines :: Int
   , maxParallelHooks :: Int
   }
@@ -160,15 +161,17 @@ parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decod
  where
   decoder = KDL.document $ proc () -> do
     mFlags <- KDL.optional . KDL.nodeWith "flags" $ KDL.children flagsDecoder -< ()
-    let mode = getFlag Mode_Check mFlags $ \(x, _) -> x
-    let format = getFlag Format_Minimal mFlags $ \(_, x) -> x
+    let mode = getFlag Mode_Check mFlags $ \(x, _, _) -> x
+    let format = getFlag Format_Minimal mFlags $ \(_, x, _) -> x
+    let useAbsolute = getFlag False mFlags $ \(_, _, x) -> x
     maxOutputLines <- KDL.option 5 $ KDL.argAt "max_output_lines" -< ()
     maxParallelHooks <- KDL.option 5 $ KDL.argAt "max_parallel_hooks" -< ()
     returnA -< GlobalConfig{..}
   flagsDecoder = proc () -> do
     mode <- KDL.optional $ KDL.argAt "--mode" -< ()
     format <- KDL.optional $ KDL.argAt "--format" -< ()
-    returnA -< (mode, format)
+    useAbsolute <- KDL.optional . KDL.nodeWith "--absolute" $ pure True -< ()
+    returnA -< (mode, format, useAbsolute)
   getFlag def mFlags f = fromMaybe def $ mFlags >>= f
 
 {----- RunMode -----}
