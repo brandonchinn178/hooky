@@ -11,6 +11,7 @@ module Hooky.Config (
   -- * Config
   Config (..),
   loadConfig,
+  parseRepoConfig,
 
   -- * RepoConfig
   RepoConfig (..),

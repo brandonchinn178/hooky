@@ -5,7 +5,9 @@
 module Hooky.LintSpec (spec) where
 
 import Control.Monad (forM_, (<=<))
+import Data.Text (Text)
 import Hooky.Config (Config (..), RepoConfig (..))
+import Hooky.Config qualified as LintRule (LintRule (..))
 import Hooky.Lint (
   LintOptions (..),
   LintRule (..),
@@ -65,6 +67,16 @@ spec = do
           runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
 
+    it "skips files failing glob" . withGitRepo $ \git -> do
+      createFileLink "foo.txt" "foo-link.txt"
+      git.exec ["add", "foo-link.txt"]
+      report <-
+        runLintRules
+          git.client
+          (withFiles ["!*.txt"] config)
+          (defaultOptions ["foo-link.txt"])
+      lintReportSuccess report `shouldBe` True
+
   describe "check_case_conflict" $ do
     let config = defaultConfig LintRule_CheckCaseConflict
 
@@ -113,6 +125,17 @@ spec = do
         report1 <- runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
         lintReportSuccess report1 `shouldBe` True
 
+    it "skips files failing glob" . withGitRepo $ \git -> do
+      git.exec ["config", "core.ignorecase", "false"]
+      writeFile "foo.txt" "" >> git.exec ["add", "foo.txt"]
+      removeFile "foo.txt" >> writeFile "FOO.TXT" "" >> git.exec ["add", "FOO.TXT"] >> git.exec ["checkout", "foo.txt"]
+      report <-
+        runLintRules
+          git.client
+          (withFiles ["FOO.txt"] config)
+          (defaultOptions ["foo.txt", "FOO.txt"])
+      lintReportSuccess report `shouldBe` True
+
   describe "check_merge_conflict" $ do
     let config = defaultConfig LintRule_CheckMergeConflict
 
@@ -138,6 +161,19 @@ spec = do
           runLintRules git.client config $ defaultOptions ["foo.txt"]
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
+
+    it "skips files failing glob" . withGitRepo $ \git -> do
+      writeFile "foo.txt" "" >> git.exec ["add", "foo.txt"] >> git.exec ["commit", "-m", "Initial commit"]
+      git.exec ["switch", "-c", "branch1", "main"] >> writeFile "foo.txt" "branch1" >> git.exec ["add", "foo.txt"] >> git.exec ["commit", "-m", "branch1"]
+      git.exec ["switch", "-c", "branch2", "main"] >> writeFile "foo.txt" "branch2" >> git.exec ["add", "foo.txt"] >> git.exec ["commit", "-m", "branch2"]
+      git.exec ["switch", "main"]
+      git.exec ["merge", "branch1", "branch2"] `shouldSatisfy` P.throws (P.anything @SomeException)
+      report <-
+        runLintRules
+          git.client
+          (withFiles ["!foo.txt"] config)
+          (defaultOptions ["foo.txt"])
+      lintReportSuccess report `shouldBe` True
 
   describe "end_of_file_fixer" $ do
     let config = defaultConfig LintRule_EndOfFileFixer
@@ -196,8 +232,17 @@ spec = do
           pure report
       lintReportSuccess report `shouldBe` False
 
+    it "skips files failing glob" . withGitRepo $ \git -> do
+      writeFile "foo.txt" "test\ntest" >> git.exec ["add", "foo.txt"]
+      report <-
+        runLintRules
+          git.client
+          (withFiles ["!*.txt"] config)
+          (defaultOptions ["foo.txt"])
+      lintReportSuccess report `shouldBe` True
+
   describe "no_commit_to_branch" $ do
-    let mkConfig branch = defaultConfig $ LintRule_NoCommitToBranch [toGlob branch]
+    let mkConfig branch = withFiles [] . defaultConfig $ LintRule_NoCommitToBranch [toGlob branch]
 
     it "succeeds when committing on another branch" $ do
       report <-
@@ -258,6 +303,15 @@ spec = do
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
+    it "skips files failing glob" . withGitRepo $ \git -> do
+      writeFile "bad.txt" "test  \ntest\n" >> git.exec ["add", "bad.txt"]
+      report <-
+        runLintRules
+          git.client
+          (withFiles ["!*.txt"] config)
+          (defaultOptions ["bad.txt"])
+      lintReportSuccess report `shouldBe` True
+
 defaultOptions :: [FilePath] -> LintOptions
 defaultOptions files =
   LintOptions
@@ -277,4 +331,15 @@ defaultConfig rule =
           }
     , global = error "GlobalConfig not used"
     , skippedHooks = mempty
+    }
+
+withFiles :: [Text] -> Config -> Config
+withFiles globs config =
+  config
+    { repo =
+        config.repo
+          { lintRules =
+              flip map config.repo.lintRules $ \rule ->
+                rule{LintRule.fileGlobs = map toGlob globs}
+          }
     }
