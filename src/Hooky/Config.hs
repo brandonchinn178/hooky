@@ -1,6 +1,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OrPatterns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -11,6 +12,7 @@ module Hooky.Config (
   -- * Config
   Config (..),
   loadConfig,
+  parseRepoConfig,
 
   -- * RepoConfig
   RepoConfig (..),
@@ -225,21 +227,23 @@ data LintRuleRule
   deriving (Show, Eq)
 
 instance HasField "name" LintRule Text where
-  getField LintRule{rule} =
-    case rule of
-      -- Must match lintRuleDecoder
-      LintRule_CheckBrokenSymlinks{} -> "check_broken_symlinks"
-      LintRule_CheckCaseConflict{} -> "check_case_conflict"
-      LintRule_CheckMergeConflict{} -> "check_merge_conflict"
-      LintRule_EndOfFileFixer{} -> "end_of_file_fixer"
-      LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
-      LintRule_TrailingWhitespace{} -> "trailing_whitespace"
+  getField LintRule{rule} = rule.name
+instance HasField "name" LintRuleRule Text where
+  getField = \case
+    -- Must match lintRuleDecoder
+    LintRule_CheckBrokenSymlinks{} -> "check_broken_symlinks"
+    LintRule_CheckCaseConflict{} -> "check_case_conflict"
+    LintRule_CheckMergeConflict{} -> "check_merge_conflict"
+    LintRule_EndOfFileFixer{} -> "end_of_file_fixer"
+    LintRule_NoCommitToBranch{} -> "no_commit_to_branch"
+    LintRule_TrailingWhitespace{} -> "trailing_whitespace"
 
 instance KDL.DecodeNode LintRule where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     rule <- ruleDecoder -< name
     fileGlobs <- KDL.children $ KDL.argsAt "files" -< ()
+    validateFiles -< (rule, fileGlobs)
     returnA -< LintRule{..}
    where
     ruleDecoder = proc name -> do
@@ -260,6 +264,20 @@ instance KDL.DecodeNode LintRule where
           returnA -< LintRule_TrailingWhitespace
         _ ->
           KDL.fail -< "Unknown lint rule: " <> name
+
+    -- TODO: This should be in sync with whether the rule is LintActionNoFile
+    validateFiles = proc (rule, fileGlobs) -> do
+      case rule of
+        LintRule_NoCommitToBranch{} -> do
+          if null fileGlobs
+            then returnA -< ()
+            else KDL.fail -< "'files' config is not supported for " <> rule.name
+        LintRule_CheckBrokenSymlinks{}
+        LintRule_CheckCaseConflict{}
+        LintRule_CheckMergeConflict{}
+        LintRule_EndOfFileFixer{}
+        LintRule_TrailingWhitespace{} ->
+            returnA -< ()
 
 {----- PassFilesMode -----}
 
