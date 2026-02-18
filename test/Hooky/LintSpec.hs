@@ -4,6 +4,7 @@
 
 module Hooky.LintSpec (spec) where
 
+import Control.Monad (forM_, (<=<))
 import Hooky.Config (Config (..), RepoConfig (..))
 import Hooky.Lint (
   LintOptions (..),
@@ -18,6 +19,7 @@ import Hooky.TestUtils.Git (withGitRepo)
 import Skeletest
 import Skeletest.Predicate qualified as P
 import System.Directory (createFileLink, removeFile)
+import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
 spec :: Spec
@@ -102,6 +104,14 @@ spec = do
           git.exec ["checkout", "foo.txt"]
           runLintRules git.client config $ defaultOptions ["FOO.txt"]
       lintReportSuccess report `shouldBe` False
+
+    it "handles large number of files" . withGitRepo $ \git -> do
+      forM_ [1 .. 10000 :: Int] $ \x ->
+        writeFile ("test-" <> show x) ""
+      git.exec ["add", "."]
+      maybe (failTest "Timed out") pure <=< timeout (100 * 1000) $ do
+        report1 <- runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
+        lintReportSuccess report1 `shouldBe` True
 
   describe "check_merge_conflict" $ do
     let config = defaultConfig LintRule_CheckMergeConflict

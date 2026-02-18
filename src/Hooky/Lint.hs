@@ -234,17 +234,12 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
-  let filePairs = allPairs . map Text.pack . Set.toList $ files
-  pure $
-    [ (Text.unpack fp, LintFailed $ "File conflicts with: " <> other)
-    | (a, b) <- filter (\(a, b) -> Text.toLower a == Text.toLower b) filePairs
-    , (fp, other) <- bothWays a b
+  let allFiles = map Text.pack . Set.toList $ files
+      collisionMap = Map.fromListWith (<>) [(Text.toLower s, [s]) | s <- allFiles]
+  pure
+    [ (Text.unpack fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " rest)
+    | fp : rest@(_ : _) <- Map.elems collisionMap
     ]
- where
-  allPairs = \case
-    [] -> []
-    x : xs -> [(x, y) | y <- xs] <> allPairs xs
-  bothWays a b = [(a, b), (b, a)]
 
 lint_CheckMergeConflict :: LintAction
 lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
