@@ -10,6 +10,8 @@ import Hooky.Config (
   toGlob,
  )
 import Skeletest
+import Skeletest.Predicate qualified as P
+import Skeletest.Prop qualified as Prop
 import Skeletest.Prop.Gen qualified as Gen
 import Skeletest.Prop.Range qualified as Range
 
@@ -57,11 +59,12 @@ globSpec = do
       "!**/*.hs" `matches` "Foo.txt" ==> True
       "!**/*.hs" `matches` "Foo/Bar/Baz.txt" ==> True
 
-      -- TODO: This throws GHC error: `internal error: stg_ap_p_ret`
-      -- prop "'<path>' and '**/<path>' are equivalent" $ do
-      --   g <- forAll genRelGlob
-      --   toGlob g `shouldBe` toGlob ("**/" <> g)
-      const (pure ()) genRelGlob
+      prop "'<path>' and '**/<path>' are equivalent" $ do
+        Prop.setTestLimit 10000
+        g <- forAll genRelGlob
+        let g1 = toGlob g
+            g2 = toGlob ("**/" <> g)
+        (matchesGlob g1 P.=== matchesGlob g2) `shouldSatisfy` P.isoWith genRelPath
 
     describe "matchesGlobs" $ do
       let
@@ -76,9 +79,15 @@ globSpec = do
 
       pure () -- TODO: property test where matchesGlobs [g] === matchesGlob g
  where
+  genRelPathLike :: Gen Text -> Gen Text
+  genRelPathLike g = Text.intercalate "/" <$> Gen.list (Range.linear 1 10) g
+
+  genRelPath :: Gen Text
+  genRelPath = genRelPathLike $ Gen.text (Range.linear 1 30) Gen.unicode
+
   genRelGlob :: Gen Text
   genRelGlob =
-    fmap (Text.intercalate "/") . Gen.list (Range.linear 1 10) $
+    genRelPathLike $
       fmap Text.concat . Gen.list (Range.linear 1 5) $
         Gen.frequency
           [ (9, Gen.text (Range.linear 1 5) Gen.unicode)
