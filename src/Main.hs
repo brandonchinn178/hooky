@@ -69,7 +69,7 @@ import System.Directory qualified as Permissions (Permissions (..))
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
-import System.IO (stderr)
+import System.IO qualified as IO
 import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
@@ -151,6 +151,9 @@ loadCLIOptions =
 
 main :: IO ()
 main = handleErrors $ do
+  IO.hSetEncoding IO.stdout IO.utf8
+  IO.hSetEncoding IO.stderr IO.utf8
+
   cli <- loadCLIOptions
 
   git <- initGitClient
@@ -185,7 +188,7 @@ resolveFiles git cmd =
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
-  TextL.hPutStrLn stderr . Term.red $ (TextL.strip . TextL.pack . displayException) e
+  TextL.hPutStrLn IO.stderr . Term.red $ (TextL.strip . TextL.pack . displayException) e
   exitFailure
  where
   shouldHandle (SomeException e) = do
