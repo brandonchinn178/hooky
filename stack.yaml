@@ -1,6 +1,11 @@
 snapshot: nightly-2026-01-17
 compiler: ghc-9.12.2
 
+extra-deps:
+  # https://github.com/brandonchinn178/concurrent-output/pull/1
+  - github: brandonchinn178/concurrent-output
+    commit: a40a4d16e7836b56a682779c1ac6882739ba6a9b
+
 ghc-options:
   "$everything": -O2
   "$locals": -Werror

@@ -3,7 +3,18 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/topics/lock_files
 
-packages: []
+packages:
+- completed:
+    name: concurrent-output
+    pantry-tree:
+      sha256: b54e689fd43957d11a23360b86815c0d63a071cf15fb4c648c52769424f27072
+      size: 947
+    sha256: d07654fda1aad6608832897e3eb835a72b9fe3fc1b7979277cf00e20bd147599
+    size: 24196
+    url: https://github.com/brandonchinn178/concurrent-output/archive/a40a4d16e7836b56a682779c1ac6882739ba6a9b.tar.gz
+    version: 1.10.21
+  original:
+    url: https://github.com/brandonchinn178/concurrent-output/archive/a40a4d16e7836b56a682779c1ac6882739ba6a9b.tar.gz
 snapshots:
 - completed:
     sha256: a1d9b59386fea77dda7e22f02995a04c1882f3fac315505f9d1a4d358576c0e5
