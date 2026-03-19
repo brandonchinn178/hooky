@@ -137,9 +137,6 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
       git.exec $ ["rm", "--cached", "--"] <> untrackedFiles
 
   save = do
-    -- Get intent-to-add files
-    itaFiles <- git.getFilesWith ["diff", "--name-only", "--diff-filter=A"]
-
     -- Get a phantom commit that includes staged files
     tree <- git.query ["write-tree"]
 
@@ -167,9 +164,10 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
         let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
         Text.writeFile stashFile diff
         Messages.info $ "Stashed changes to: " <> TextL.pack stashFile
+        git.clearChanges
+        itaFiles <- git.getFilesWith ["diff", "--name-only", "--diff-filter=A"]
         unless (null itaFiles) $ do
           git.exec $ ["rm", "--force", "--"] <> itaFiles -- Remove intent-to-add files; persisted in the diff
-        git.clearChanges
         pure $ Just (stashFile, itaFiles)
   restore = \case
     Nothing -> pure ()
