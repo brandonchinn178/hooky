@@ -1,3 +1,9 @@
+# v1.0.3
+
+* Force utf-8 encoding ([#23](https://github.com/brandonchinn178/hooky/issues/23))
+* Fix stashing untracked renamed files ([#27](https://github.com/brandonchinn178/hooky/issues/27))
+* Fix mangled output on long command ([#26](https://github.com/brandonchinn178/hooky/issues/26))
+
 # v1.0.2
 
 * Change `hooky install` to use any `hooky` on PATH, since absolute path may be version-specific and break on upgrade
