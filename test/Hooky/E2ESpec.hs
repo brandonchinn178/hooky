@@ -13,6 +13,7 @@ import Hooky.TestUtils.Git (withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
 import Skeletest.Predicate qualified as P
+import System.Directory (renameFile)
 import System.Exit (ExitCode (..))
 import System.IO qualified as IO
 import System.Process qualified as Process
@@ -84,6 +85,23 @@ spec = do
         checkUntracked
         runHooky ["run", "--stash", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
         checkUntracked
+
+    it "stashes unstaged renamed files" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        writeFile "test1.txt" "test\n"
+        writeFile "test2.txt" "test\n"
+        git.exec ["add", ".hooky.kdl", "test1.txt", "test2.txt"]
+        git.exec ["commit", "-m", "test"]
+        -- Rename test{1,2}.txt => test{1,2}-new.txt;
+        -- Intent-to-add `test1-new.txt`, leave `test2-new.txt` untracked
+        renameFile "test1.txt" "test1-new.txt"
+        renameFile "test2.txt" "test2-new.txt"
+        git.exec ["add", "-N", "test2-new.txt"]
+        (_, before, _) <- git.run ["status"]
+        runHooky ["run"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+        (_, after, _) <- git.run ["status"]
+        after `shouldBe` before
 
     it "error if .hooky.kdl is to be stashed" $ do
       withGitRepo $ \git -> do
