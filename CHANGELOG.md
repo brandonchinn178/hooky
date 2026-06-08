@@ -1,3 +1,7 @@
+# v1.0.4
+
+* Filter out deleted files ([#32](https://github.com/brandonchinn178/hooky/pull/32))
+
 # v1.0.3
 
 * Force utf-8 encoding ([#23](https://github.com/brandonchinn178/hooky/issues/23))
