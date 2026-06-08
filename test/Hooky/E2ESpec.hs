@@ -13,7 +13,7 @@ import Hooky.TestUtils.Git (withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
 import Skeletest.Predicate qualified as P
-import System.Directory (renameFile)
+import System.Directory (removeFile, renameFile)
 import System.Exit (ExitCode (..))
 import System.IO qualified as IO
 import System.Process qualified as Process
@@ -58,6 +58,14 @@ spec = do
       (code, _, stderr) <- readHooky ["run", "--all", "file.txt"]
       code `shouldBe` ExitFailure 1
       stderr `shouldBe` "Expected exactly one of: FILES, --modified, --staged, --all, --prev\n"
+
+    it "filters out deleted files" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        writeFile "bad.txt" "bad"
+        git.exec ["add", ".hooky.kdl", "bad.txt"] >> git.exec ["commit", "-m", "test"]
+        removeFile "bad.txt"
+        runHooky ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
 
     it "stashes intent-to-add files" $ do
       withGitRepo $ \git -> do
