@@ -17,7 +17,7 @@ packages:
     url: https://github.com/brandonchinn178/concurrent-output/archive/a40a4d16e7836b56a682779c1ac6882739ba6a9b.tar.gz
 snapshots:
 - completed:
-    sha256: a1d9b59386fea77dda7e22f02995a04c1882f3fac315505f9d1a4d358576c0e5
-    size: 719998
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2026/1/17.yaml
-  original: nightly-2026-01-17
+    sha256: d8195bf6afd22998df78e354b7834b645ec8a104d294cddc97934b7e42edc97f
+    size: 758068
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2026/6/5.yaml
+  original: nightly-2026-06-05
