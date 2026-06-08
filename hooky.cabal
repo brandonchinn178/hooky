@@ -43,7 +43,7 @@ library
     , containers
     , directory
     , filepath
-    , kdl-hs >= 0.2.0
+    , kdl-hs >= 1.1.0
     , process
     , scientific
     , text

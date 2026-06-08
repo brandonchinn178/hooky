@@ -242,8 +242,7 @@ instance KDL.DecodeNode LintRule where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     rule <- ruleDecoder -< name
-    fileGlobs <- KDL.children $ KDL.argsAt "files" -< ()
-    validateFiles -< (rule, fileGlobs)
+    fileGlobs <- filesDecoder -< rule
     returnA -< LintRule{..}
    where
     ruleDecoder = proc name -> do
@@ -266,18 +265,19 @@ instance KDL.DecodeNode LintRule where
           KDL.fail -< "Unknown lint rule: " <> name
 
     -- TODO: This should be in sync with whether the rule is LintActionNoFile
-    validateFiles = proc (rule, fileGlobs) -> do
+    filesDecoder = proc rule -> do
       case rule of
         LintRule_NoCommitToBranch{} -> do
-          if null fileGlobs
-            then returnA -< ()
-            else KDL.fail -< "'files' config is not supported for " <> rule.name
+          x <- KDL.optional $ KDL.children $ KDL.node @KDL.Node "files" -< ()
+          case x of
+            Just _ -> KDL.fail -< "'files' config is not supported for " <> rule.name
+            Nothing -> returnA -< []
         LintRule_CheckBrokenSymlinks{}
         LintRule_CheckCaseConflict{}
         LintRule_CheckMergeConflict{}
         LintRule_EndOfFileFixer{}
         LintRule_TrailingWhitespace{} ->
-            returnA -< ()
+            KDL.children $ KDL.argsAt "files" -< ()
 
 {----- PassFilesMode -----}
 
@@ -361,4 +361,4 @@ matchesGlobs globs s =
 
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]
-  valueDecoder = toGlob <$> KDL.text
+  valueDecoder = toGlob <$> KDL.string
