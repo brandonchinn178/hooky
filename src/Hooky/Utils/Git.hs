@@ -8,6 +8,7 @@ module Hooky.Utils.Git (
 ) where
 
 import Control.Monad (void)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Records (HasField (..))
@@ -47,6 +48,12 @@ instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
    where
     split = map Text.unpack . filter (not . Text.null) . Text.splitOn (Text.pack "\0")
 instance HasField "getFiles" GitClient (IO [FilePath]) where
-  getField git = git.getFilesWith ["ls-files"]
+  getField git = do
+    files <- git.getFilesWith ["ls-files"]
+    deletedFiles <- git.getFilesWith ["ls-files", "--deleted"]
+    pure $ files `without` deletedFiles
+   where
+    -- 'y' is usually small, so this should be O(n) in the common case.
+    x `without` y = filter (`Set.notMember` Set.fromList y) x
 instance HasField "getChangedFiles" GitClient ([String] -> IO [FilePath]) where
   getField git args = git.getFilesWith $ ["diff", "--name-only", "--diff-filter=AMR"] <> args
