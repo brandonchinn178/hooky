@@ -19,10 +19,11 @@ stack exec -- hooky run ...
 1. Publish GitHub release
     * https://github.com/brandonchinn178/hooky/releases
 1. Update homebrew formula
-    * `brew bump-formula-pr brandonchinn178/tap/hooky --version 0.0.0 --write-only`
+    * `brew bump-formula-pr brandonchinn178/tap/hooky --write-only --version 0.0.0`
     * Commit changes on a new branch + push
     * Make PR
     * After CI passes, add the `pr-pull` label
 1. Update nixpkgs
-    * Update hash with `./nix_hash.py https://github.com/brandonchinn178/hooky/archive/v0.0.0.tar.gz --strip-components=1`
+    * Edit `pkgs/by-name/ho/hooky/package.nix` in `https://github.com/NixOS/nixpkgs`
+    * Update hash with `./nix_hash.py --strip-components=1 https://github.com/brandonchinn178/hooky/archive/v0.0.0.tar.gz`
         * https://github.com/brandonchinn178/nix-hash
