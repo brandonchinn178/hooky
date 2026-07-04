@@ -3,12 +3,8 @@
 import argparse
 import itertools
 from pathlib import Path
-from typing import Mapping
 
 TOP = Path(__file__).resolve().parent.parent
-
-BASE_DOWNLOAD_URL = "https://github.com/brandonchinn178/hooky/releases/download"
-BIN_NAME = "hooky"
 
 
 def main() -> None:
@@ -25,14 +21,9 @@ def main() -> None:
 
     parser_generate = subparsers.add_parser("generate")
     parser_generate.add_argument("--release-version", required=True)
-    parser_generate.add_argument("--bin", required=True, nargs=2, action="append")
     parser_generate.set_defaults(
         run=lambda args: generate(
             version=args.release_version,
-            binaries={
-                label: Path(bin_path)
-                for label, bin_path in args.bin
-            },
         )
     )
 
@@ -64,7 +55,7 @@ def get_changelog_for(version: str) -> str:
     )
 
 
-def generate(version: str, binaries: Mapping[str, Path]) -> None:
+def generate(version: str) -> None:
     release_notes = [
         get_changelog_for(version),
     ]
