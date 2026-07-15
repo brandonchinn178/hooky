@@ -20,6 +20,12 @@ Features:
 brew install brandonchinn178/tap/hooky
 ```
 
+### With Nix
+
+```shell
+nix profile install nixpkgs#hooky
+```
+
 ### GitHub release
 
 Download the appropriate binary from the [GitHub releases page](https://github.com/brandonchinn178/hooky/releases).
