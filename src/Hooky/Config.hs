@@ -29,19 +29,11 @@ module Hooky.Config (
   allRunModes,
   parseRunMode,
   renderRunMode,
-
-  -- * Glob
-  Glob (..),
-  matchesGlob,
-  matchesGlobs,
-  toGlob,
-  renderGlob,
 ) where
 
 import Control.Arrow (returnA)
 import Control.Monad (unless)
 import Data.Bifunctor qualified as Bifunctor
-import Data.List (partition, tails)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
@@ -54,6 +46,7 @@ import Data.Text.IO qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (abort)
 import Hooky.Internal.Output (OutputFormat (..), parseOutputFormat)
+import Hooky.Utils.Glob (Glob, toGlob)
 import KDL.Arrow qualified as KDL
 import System.Directory (XdgDirectory (..), doesFileExist, getXdgDirectory)
 import System.Environment (lookupEnv)
@@ -297,67 +290,6 @@ instance KDL.DecodeValue PassFilesMode where
     s -> KDL.failM $ "Invalid pass_files value: " <> s
 
 {----- Glob -----}
-
--- | TODO: make proper data type
--- (isNegate, [Left isStarStar, Right lit])
-newtype Glob = Glob (Bool, [Either Bool String])
-  deriving (Eq)
-
-instance Show Glob where
-  showsPrec _ glob = showString "toGlob \"" . showString (Text.unpack $ renderGlob glob) . showString "\""
-
-toGlob :: Text -> Glob
-toGlob = Glob . parse0 . Text.unpack
- where
-  parse0 = \case
-    '!' : cs -> (True, parse1 cs)
-    cs -> (False, parse1 cs)
-
-  parse1 = \case
-    '/' : cs -> parse2 cs
-    cs -> Left True : dropLeading (Left True) (parse2 cs)
-
-  parse2 = \case
-    '*' : '*' : cs -> Left True : parse2 (dropLeading '/' cs)
-    '*' : cs -> Left False : parse2 cs
-    -- TODO: collapse all consecutive Rights
-    c : cs -> Right [c] : parse2 cs
-    [] -> []
-
-  dropLeading x = \case
-    a : as | a == x -> as
-    as -> as
-
-renderGlob :: Glob -> Text
-renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap go parts
- where
-  go = \case
-    Left True -> "**/"
-    Left False -> "*"
-    Right s -> Text.pack s
-
-matchesGlob :: Glob -> Text -> Bool
-matchesGlob (Glob (isNegate, parts)) = (if isNegate then not else id) . go parts
- where
-  go [] = Text.null
-  go (Left True : rest) = any (go rest) . wildcardDirs
-  go (Left False : rest) = any (go rest) . wildcardFile
-  go (Right s : rest) = maybe False (go rest) . Text.stripPrefix (Text.pack s)
-
-  wildcardDirs = map (Text.intercalate "/") . tails . Text.splitOn "/"
-  wildcardFile fp =
-    let (pre, post) = Text.breakOn "/" fp
-     in map (<> post) $ Text.tails pre
-
-matchesGlobs :: [Glob] -> Text -> Bool
-matchesGlobs globs s =
-  and
-    [ null posGlobs || any matches posGlobs
-    , null negGlobs || all matches negGlobs
-    ]
- where
-  matches = (`matchesGlob` s)
-  (negGlobs, posGlobs) = partition (\(Glob (x, _)) -> x) globs
 
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]

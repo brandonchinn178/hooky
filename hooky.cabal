@@ -33,6 +33,7 @@ library
     Hooky.Internal.Temp
     Hooky.Utils.Directory
     Hooky.Utils.Git
+    Hooky.Utils.Glob
     Hooky.Utils.Process
     Hooky.Utils.Term
   build-depends:
@@ -43,6 +44,7 @@ library
     , containers
     , directory
     , filepath
+    , Glob
     , kdl-hs >= 1.1.0
     , process
     , scientific
@@ -84,6 +86,8 @@ test-suite hooky-tests
     Hooky.ConfigSpec
     Hooky.E2ESpec
     Hooky.LintSpec
+    Hooky.Utils.GlobSpec
+    -- Test utilities
     Hooky.TestUtils.Git
     Hooky.TestUtils.Hooky
   build-depends:
