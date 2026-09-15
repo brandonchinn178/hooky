@@ -1,4 +1,6 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Utils.Glob (
   Glob,
@@ -8,60 +10,47 @@ module Hooky.Utils.Glob (
   renderGlob,
 ) where
 
-import Data.List (partition, tails)
+import Data.List (partition)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.FilePath.Glob qualified as Glob
 
--- | TODO: make proper data type
--- (isNegate, [Left isStarStar, Right lit])
-newtype Glob = Glob (Bool, [Either Bool String])
+data Glob = Glob
+  { original :: Text
+  , pattern :: Glob.Pattern
+  , invert :: Bool
+  }
   deriving (Eq)
 
 instance Show Glob where
-  showsPrec _ glob = showString "toGlob \"" . showString (Text.unpack $ renderGlob glob) . showString "\""
+  showsPrec _ glob = showString "toGlob " . shows (renderGlob glob)
 
 toGlob :: Text -> Glob
-toGlob = Glob . parse0 . Text.unpack
+toGlob s0 = parse0 . Text.unpack $ s0
  where
   parse0 = \case
-    '!' : cs -> (True, parse1 cs)
-    cs -> (False, parse1 cs)
+    '!' : cs -> (parse1 cs){invert = True}
+    cs -> parse1 cs
 
   parse1 = \case
     '/' : cs -> parse2 cs
-    cs -> Left True : dropLeading (Left True) (parse2 cs)
+    cs -> parse2 ("**/" <> cs)
 
-  parse2 = \case
-    '*' : '*' : cs -> Left True : parse2 (dropLeading '/' cs)
-    '*' : cs -> Left False : parse2 cs
-    -- TODO: collapse all consecutive Rights
-    c : cs -> Right [c] : parse2 cs
-    [] -> []
-
-  dropLeading x = \case
-    a : as | a == x -> as
-    as -> as
+  parse2 s =
+    Glob
+      { original = s0
+      , pattern = Glob.compile s
+      , invert = False
+      }
 
 renderGlob :: Glob -> Text
-renderGlob (Glob (isNegate, parts)) = (if isNegate then "!" else "") <> foldMap go parts
- where
-  go = \case
-    Left True -> "**/"
-    Left False -> "*"
-    Right s -> Text.pack s
+renderGlob = (.original)
 
 matchesGlob :: Glob -> Text -> Bool
-matchesGlob (Glob (isNegate, parts)) = (if isNegate then not else id) . go parts
+matchesGlob glob s = invert $ matches glob.pattern
  where
-  go [] = Text.null
-  go (Left True : rest) = any (go rest) . wildcardDirs
-  go (Left False : rest) = any (go rest) . wildcardFile
-  go (Right s : rest) = maybe False (go rest) . Text.stripPrefix (Text.pack s)
-
-  wildcardDirs = map (Text.intercalate "/") . tails . Text.splitOn "/"
-  wildcardFile fp =
-    let (pre, post) = Text.breakOn "/" fp
-     in map (<> post) $ Text.tails pre
+  invert = if glob.invert then not else id
+  matches = flip Glob.match (Text.unpack s)
 
 matchesGlobs :: [Glob] -> Text -> Bool
 matchesGlobs globs s =
@@ -71,4 +60,4 @@ matchesGlobs globs s =
     ]
  where
   matches = (`matchesGlob` s)
-  (negGlobs, posGlobs) = partition (\(Glob (x, _)) -> x) globs
+  (negGlobs, posGlobs) = partition (.invert) globs
