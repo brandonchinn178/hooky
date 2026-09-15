@@ -53,6 +53,18 @@ spec = do
           runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
+    it "handles relative path symlinks" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectory "subdir"
+          writeFile "top-level.txt" ""
+          createFileLink "../top-level.txt" "subdir/top-level-link.txt"
+          writeFile "subdir/nested.txt" ""
+          createFileLink "nested.txt" "subdir/nested-link.txt"
+          git.exec ["add", "top-level.txt", "subdir"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` True
+
     it "fails when a symlink is broken" $ do
       report <-
         withGitRepo $ \git -> do
