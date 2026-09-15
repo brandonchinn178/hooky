@@ -13,7 +13,7 @@ import Hooky.TestUtils.Git (withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
 import Skeletest.Predicate qualified as P
-import System.Directory (removeFile, renameFile)
+import System.Directory (createDirectory, createDirectoryLink, removeFile, renameFile)
 import System.Exit (ExitCode (..))
 import System.IO qualified as IO
 import System.Process qualified as Process
@@ -156,6 +156,29 @@ spec = do
             readHooky ["run", "--all", flag]
         code `shouldBe` ExitFailure 1
         scrubDuration stdout `shouldSatisfy` P.matchesSnapshot
+
+    it "runs on all files in directory" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        git.exec ["add", ".hooky.kdl"]
+        git.exec ["commit", "-m", "test"]
+        createDirectory "foo"
+        writeFile "foo/bar.txt" "asdf"
+        (code, stdout, _) <- readHooky ["run", "foo"]
+        code `shouldBe` ExitFailure 1
+        stdout `shouldSatisfy` P.hasInfix "foo/bar.txt"
+
+    it "runs on all files in symlinked directory" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" hookyConfigEofFixer
+        git.exec ["add", ".hooky.kdl"]
+        git.exec ["commit", "-m", "test"]
+        createDirectory "foo"
+        createDirectoryLink "foo" "foo-link"
+        writeFile "foo/bar.txt" "asdf"
+        (code, stdout, _) <- readHooky ["run", "foo-link"]
+        code `shouldBe` ExitFailure 1
+        stdout `shouldSatisfy` P.hasInfix "foo/bar.txt"
 
     describe "skipping hooks with env var" $ do
       let runHookyWithEnv env args = do
