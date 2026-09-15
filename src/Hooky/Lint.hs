@@ -37,14 +37,12 @@ import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Config (
   Config (..),
-  Glob,
   LintRule (..),
   LintRuleRule (..),
   RepoConfig (..),
-  matchesGlobs,
-  toGlob,
  )
 import Hooky.Utils.Git (GitClient)
+import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
 import System.Directory qualified as Dir
 import System.IO.Error (isDoesNotExistError)
 import UnliftIO.Exception (tryJust)

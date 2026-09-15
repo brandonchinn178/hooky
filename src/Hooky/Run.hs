@@ -35,7 +35,6 @@ import Hooky.Config (
   HookConfig,
   PassFilesMode (..),
   RunMode (..),
-  matchesGlobs,
  )
 import Hooky.Config qualified as Config (Config (..))
 import Hooky.Config qualified as GlobalConfig (GlobalConfig (..))
@@ -51,6 +50,7 @@ import Hooky.Internal.Output (
  )
 import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
+import Hooky.Utils.Glob (matchesGlobs)
 import Hooky.Utils.Process (renderShell, runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
 import System.Console.Regions (
