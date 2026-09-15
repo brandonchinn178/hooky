@@ -45,6 +45,7 @@ import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
 import System.Directory qualified as Dir
+import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import UnliftIO.Exception (tryJust)
@@ -244,7 +245,18 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
     isLink <- Dir.pathIsSymbolicLink fp
     if not isLink
       then pure Nothing
-      else Just <$> Dir.getSymbolicLinkTarget fp
+      else do
+        targetRaw <- Dir.getSymbolicLinkTarget fp
+        targetResolved <- resolvePath (FilePath.takeDirectory fp </> targetRaw)
+        pure $ Just targetResolved
+
+  -- Similar to canonicalizePath, except keeps the path relative if relative
+  resolvePath fp = do
+    if FilePath.isAbsolute fp
+      then Dir.canonicalizePath fp
+      else do
+        cwd <- Dir.getCurrentDirectory
+        FilePath.makeRelative cwd <$> Dir.canonicalizePath (cwd </> fp)
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
