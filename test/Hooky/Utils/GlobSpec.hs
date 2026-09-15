@@ -59,6 +59,14 @@ globSpec = do
       "!**/*.hs" `matches` "Foo.txt" ==> True
       "!**/*.hs" `matches` "Foo/Bar/Baz.txt" ==> True
 
+      -- Brace expansion
+      "{foo,bar}.{hs,txt}" `matches` "foo.hs" ==> True
+      "{foo,bar}.{hs,txt}" `matches` "bar.hs" ==> True
+      "{foo,bar}.{hs,txt}" `matches` "foo.txt" ==> True
+      "{foo,bar}.{hs,txt}" `matches` "bar.txt" ==> True
+      "!{foo,bar}.{hs,txt}" `matches` "bar.txt" ==> False
+      "!{foo,bar}.{hs,txt}" `matches` "baz.txt" ==> True
+
       prop "'<path>' and '**/<path>' are equivalent" $ do
         Prop.setTestLimit 10000
         g <- forAll genRelGlob

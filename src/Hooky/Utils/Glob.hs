@@ -17,7 +17,7 @@ import System.FilePath.Glob qualified as Glob
 
 data Glob = Glob
   { original :: Text
-  , pattern :: Glob.Pattern
+  , patterns :: [Glob.Pattern]
   , invert :: Bool
   }
   deriving (Eq)
@@ -26,28 +26,45 @@ instance Show Glob where
   showsPrec _ glob = showString "toGlob " . shows (renderGlob glob)
 
 toGlob :: Text -> Glob
-toGlob s0 = parse0 . Text.unpack $ s0
+toGlob s0 = parse0 s0
  where
-  parse0 = \case
-    '!' : cs -> (parse1 cs){invert = True}
-    cs -> parse1 cs
+  parse0 s =
+    case Text.uncons s of
+      Just ('!', s') -> (parse1 s'){invert = True}
+      _ -> parse1 s
 
-  parse1 = \case
-    '/' : cs -> parse2 cs
-    cs -> parse2 ("**/" <> cs)
+  parse1 s =
+    case Text.uncons s of
+      Just ('/', s') -> parse2 s'
+      _ -> parse2 ("**/" <> s)
 
   parse2 s =
     Glob
       { original = s0
-      , pattern = Glob.compile s
+      , patterns = map (Glob.compile . Text.unpack) $ expandBraces s
       , invert = False
       }
+
+  -- Glob doesn't support braces, so we have to manually expand
+  -- https://github.com/Deewiant/glob/issues/32
+  expandBraces s
+    | Just (pre, s') <- breakAt "{" s
+    , Just (braced, post) <- breakAt "}" s' =
+        [ pre <> braced' <> post'
+        | braced' <- Text.splitOn "," braced
+        , post' <- expandBraces post
+        ]
+    | otherwise = [s]
+
+  breakAt sep s =
+    let (pre, post) = Text.breakOn sep s
+     in (pre,) <$> Text.stripPrefix sep post
 
 renderGlob :: Glob -> Text
 renderGlob = (.original)
 
 matchesGlob :: Glob -> Text -> Bool
-matchesGlob glob s = invert $ matches glob.pattern
+matchesGlob glob s = invert $ any matches glob.patterns
  where
   invert = if glob.invert then not else id
   matches = flip Glob.match (Text.unpack s)
