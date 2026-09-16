@@ -1,3 +1,10 @@
+# v1.0.5
+
+* Support brace expansion in file globs ([#37](https://github.com/brandonchinn178/hooky/pull/37))
+* Various symlink fixes ([#39](https://github.com/brandonchinn178/hooky/pull/39), [#40](https://github.com/brandonchinn178/hooky/pull/40), [#41](https://github.com/brandonchinn178/hooky/pull/41))
+  * Fix errors when repo contains symlinks that point to a directory
+  * Fix errors when repo contains symlinks in subdirectories with relative paths
+
 # v1.0.4
 
 * Filter out deleted files ([#32](https://github.com/brandonchinn178/hooky/pull/32))
