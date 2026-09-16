@@ -34,6 +34,7 @@ import Hooky.Config (
   renderRunMode,
  )
 import Hooky.Error (abort, abortImpure)
+import Hooky.Internal.Logging qualified as Logging
 import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
   OutputFormat (..),
@@ -78,6 +79,7 @@ import UnliftIO.Exception (Exception (..), SomeException (..), catchAny, handleJ
 data CLIOptions = CLIOptions
   { run :: CLICommandAction
   , configFile :: Maybe FilePath
+  , verbose :: Bool
   }
 
 type CLICommandAction = GitClient -> Config -> IO ()
@@ -129,6 +131,12 @@ loadCLIOptions =
         , Opt.short 'c'
         , Opt.help "Path to config file (default: .hooky.kdl)"
         ]
+    verbose <-
+      Opt.switch . mconcat $
+        [ Opt.long "verbose"
+        , Opt.short 'v'
+        , Opt.help "Increase logging verbosity"
+        ]
     pure CLIOptions{..}
 
   parseInternalCommand =
@@ -156,6 +164,10 @@ main = handleErrors $ do
   IO.hSetEncoding IO.stderr IO.utf8
 
   cli <- loadCLIOptions
+  Logging.initialize $
+    if cli.verbose
+      then Logging.LogLevel_Debug
+      else Logging.LogLevel_Warn
 
   git <- initGitClient
 

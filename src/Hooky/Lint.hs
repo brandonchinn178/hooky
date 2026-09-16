@@ -41,6 +41,7 @@ import Hooky.Config (
   LintRuleRule (..),
   RepoConfig (..),
  )
+import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
 import System.Directory qualified as Dir
@@ -76,6 +77,7 @@ runNonFileLintRules ::
   IO [(Text, LintResult)]
 runNonFileLintRules git allLinters =
   forM linters $ \(rule, run) -> do
+    Logging.debug $ "Running linter: " <> rule.name
     result <- run git
     pure (rule.name, result)
  where
@@ -88,6 +90,7 @@ runAllFilesLintRules ::
 runAllFilesLintRules git allLinters = do
   files <- Set.fromList <$> git.getFiles
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
+    Logging.debug $ "Running linter: " <> rule.name
     results <- run git $ Set.filter (matchesGlobs rule.fileGlobs . Text.pack) files
     pure [(Just fp, [(rule.name, result)]) | (fp, result) <- results]
  where
@@ -107,6 +110,7 @@ runPerFileLintRules git options allLinters file =
       (results, contents2) <-
         mapAndFoldM
           ( \contents (rule, run) -> do
+              Logging.debug $ "Running linter: " <> rule.name
               (result, contents') <- run git file contents
               pure $
                 if options.autofix
