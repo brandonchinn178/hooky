@@ -20,7 +20,12 @@ import Hooky.Lint (
 import Hooky.TestUtils.Git (withGitRepo)
 import Skeletest
 import Skeletest.Predicate qualified as P
-import System.Directory (createFileLink, removeFile)
+import System.Directory (
+  createDirectory,
+  createDirectoryLink,
+  createFileLink,
+  removeFile,
+ )
 import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
@@ -35,6 +40,16 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` True
+
+    it "handles symlinks to directories" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectory "foo"
+          writeFile "foo/bar.txt" ""
+          createDirectoryLink "foo" "foo-link"
+          git.exec ["add", "foo", "foo-link"]
           runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 

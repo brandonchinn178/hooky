@@ -20,7 +20,7 @@ module Hooky.Lint (
   toGlob,
 ) where
 
-import Control.Monad (forM, when)
+import Control.Monad (forM, when, (>=>))
 import Data.Bifunctor (first)
 import Data.ByteString qualified as ByteString
 import Data.Char (isSpace)
@@ -45,6 +45,7 @@ import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
 import System.Directory qualified as Dir
+import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import UnliftIO.Exception (tryJust)
 
@@ -229,13 +230,21 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
     fmap catMaybes . forM xs $ \x -> do
       p <- f x
       pure $ if p then Just x else Nothing
-  isBrokenSymlink files fp = do
+  -- Don't include `fp` as an argument, to ensure this is memoized
+  isBrokenSymlink files =
+    let dirs = Set.map FilePath.takeDirectory files
+     in getSymlinkTarget >=> \case
+          Nothing -> pure False
+          Just target -> do
+            isDir <- Dir.doesDirectoryExist target
+            pure $ target `Set.notMember` (if isDir then dirs else files)
+  getSymlinkTarget fp = do
+    -- Common case is non-symlink. Faster to check pathIsSymbolicLink than to
+    -- catch getSymbolicLinkTarget exceptions.
     isLink <- Dir.pathIsSymbolicLink fp
     if not isLink
-      then pure False
-      else do
-        linkTarget <- Dir.getSymbolicLinkTarget fp
-        pure $ linkTarget `Set.notMember` files
+      then pure Nothing
+      else Just <$> Dir.getSymbolicLinkTarget fp
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
