@@ -61,6 +61,7 @@ import Paths_hooky qualified
 import System.Directory (
   doesFileExist,
   getPermissions,
+  getSymbolicLinkTarget,
   makeAbsolute,
   renameFile,
   setPermissions,
@@ -70,7 +71,7 @@ import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO qualified as IO
-import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
+import UnliftIO.Exception (Exception (..), SomeException (..), catchAny, handleJust)
 
 {----- CLI Options -----}
 
@@ -180,7 +181,8 @@ resolveFiles git cmd =
   resolve = fmap concat . mapM resolveFile
   resolveFile = \case
     '@' : file -> map Text.unpack . Text.lines <$> Text.readFile file
-    path ->
+    path0 -> do
+      path <- getSymbolicLinkTarget path0 `catchAny` \_ -> pure path0
       getPathType path >>= \case
         Just PathType_File -> pure [path]
         Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
