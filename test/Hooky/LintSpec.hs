@@ -20,7 +20,15 @@ import Hooky.Lint (
 import Hooky.TestUtils.Git (withGitRepo)
 import Skeletest
 import Skeletest.Predicate qualified as P
-import System.Directory (createFileLink, removeFile)
+import System.Directory (
+  createDirectory,
+  createDirectoryIfMissing,
+  createDirectoryLink,
+  createFileLink,
+  getCurrentDirectory,
+  removeFile,
+ )
+import System.FilePath ((</>))
 import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
@@ -35,7 +43,50 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` True
+
+    it "handles symlinks to directories" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectory "foo"
+          writeFile "foo/bar.txt" ""
+          createDirectoryLink "foo" "foo-link"
+          git.exec ["add", "foo", "foo-link"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` True
+
+    it "handles relative path symlinks" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectory "subdir"
+          createDirectory "subdir/subdir2"
+          -- subdir/top-level-link.txt -> ../top-level.txt
+          writeFile "top-level.txt" ""
+          createFileLink "../top-level.txt" "subdir/top-level-link.txt"
+          -- subdir/nested-link.txt -> nested.txt
+          writeFile "subdir/nested.txt" ""
+          createFileLink "nested.txt" "subdir/nested-link.txt"
+          git.exec ["add", "top-level.txt", "subdir"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` True
+
+    it "handles symlink with .. in deep symlink" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectoryIfMissing True "subdir1/subdir2/subdir3"
+          writeFile "subdir1/subdir2/nested.txt" ""
+          writeFile "subdir1/subdir2/subdir3/.gitkeep" ""
+          createFileLink "subdir1/subdir2/subdir3" "deep-link"
+          createFileLink "deep-link/../nested.txt" "nested-link.txt"
+          git.exec ["add", "subdir1", "deep-link", "nested-link.txt"]
+          runLintRules git.client config $
+            defaultOptions
+              [ "subdir1/subdir2/nested.txt"
+              , "subdir1/subdir2/subdir3/.gitkeep"
+              , "deep-link"
+              , "nested-link.txt"
+              ]
       lintReportSuccess report `shouldBe` True
 
     it "fails when a symlink is broken" $ do
@@ -43,7 +94,7 @@ spec = do
         withGitRepo $ \git -> do
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -53,7 +104,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
 
     it "fails when target is deleted" $ do
@@ -64,7 +115,17 @@ spec = do
           git.exec ["add", "foo.txt", "foo-link.txt"]
           git.exec ["commit", "-m", "Initial commit"]
           git.exec ["rm", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
+      lintReportSuccess report `shouldBe` False
+
+    it "fails when target is absolute path" $ do
+      report <-
+        withGitRepo $ \git -> do
+          root <- getCurrentDirectory
+          writeFile "foo.txt" ""
+          createFileLink (root </> "foo.txt") "foo-link.txt"
+          git.exec ["add", "foo.txt", "foo-link.txt"]
+          runLintRules git.client config $ defaultOptions ["foo.txt", "foo-link.txt"]
       lintReportSuccess report `shouldBe` False
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -74,7 +135,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!*.txt"] config)
-          (defaultOptions ["foo-link.txt"])
+          defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
   describe "check_case_conflict" $ do
@@ -86,7 +147,7 @@ spec = do
           writeFile "foo.txt" ""
           writeFile "bar.txt" ""
           git.exec ["add", "foo.txt", "bar.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
     it "fails when files conflict" $ do
@@ -99,7 +160,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "FOO.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -114,7 +175,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["FOO.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
 
     it "handles large number of files" . withGitRepo $ \git -> do
@@ -122,7 +183,7 @@ spec = do
         writeFile ("test-" <> show x) ""
       git.exec ["add", "."]
       maybe (failTest "Timed out") pure <=< timeout (100 * 1000) $ do
-        report1 <- runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
+        report1 <- runLintRules git.client config defaultOptionsAllFiles
         lintReportSuccess report1 `shouldBe` True
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -133,7 +194,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["FOO.txt"] config)
-          (defaultOptions ["foo.txt", "FOO.txt"])
+          defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
   describe "check_merge_conflict" $ do
@@ -318,6 +379,11 @@ defaultOptions files =
     { autofix = False
     , files = files
     }
+
+-- | Default options for rules that run on all files. The files in the options
+-- are not set, as those are only used for PerFile rules.
+defaultOptionsAllFiles :: LintOptions
+defaultOptionsAllFiles = defaultOptions [error "LintOptions.files unexpectedly used"]
 
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =

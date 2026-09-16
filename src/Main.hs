@@ -187,18 +187,19 @@ resolveFiles git cmd =
   case cliCommandFiles cmd of
     Nothing -> pure cmd
     Just (files, setFiles) -> do
-      files' <- resolve files
+      files' <- concatMapM resolveFileRefs files >>= concatMapM resolveFilePaths
       pure $ setFiles files'
  where
-  resolve = fmap concat . mapM resolveFile
-  resolveFile = \case
+  concatMapM f = fmap concat . mapM f
+  resolveFileRefs = \case
     '@' : file -> map Text.unpack . Text.lines <$> Text.readFile file
-    path0 -> do
-      path <- getSymbolicLinkTarget path0 `catchAny` \_ -> pure path0
-      getPathType path >>= \case
-        Just PathType_File -> pure [path]
-        Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
-        Nothing -> abort $ "File does not exist: " <> Text.pack path
+    path -> pure [path]
+  resolveFilePaths rawPath = do
+    path <- getSymbolicLinkTarget rawPath `catchAny` \_ -> pure rawPath
+    getPathType path >>= \case
+      Just PathType_File -> pure [path]
+      Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
+      Nothing -> abort $ "File does not exist: " <> Text.pack path
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do

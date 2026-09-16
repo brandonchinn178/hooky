@@ -180,6 +180,31 @@ spec = do
         code `shouldBe` ExitFailure 1
         stdout `shouldSatisfy` P.hasInfix "foo/bar.txt"
 
+    it "runs on all files in implicit symlinked directory" $ do
+      withGitRepo $ \git -> do
+        writeFile ".hooky.kdl" $
+          """
+          hook hooky {
+            command hooky lint {
+              // Bug appears only when `pass_files` is `file`
+              pass_files file
+            }
+            files *
+          }
+          lint_rules {
+            - end_of_file_fixer
+          }
+
+          """
+        git.exec ["add", ".hooky.kdl"]
+        git.exec ["commit", "-m", "test"]
+        createDirectory "foo"
+        createDirectoryLink "foo" "foo-link"
+        writeFile "foo/bar.txt" ""
+        git.exec ["add", "foo", "foo-link"]
+        (code, _, _) <- readHooky ["run"]
+        code `shouldBe` ExitSuccess
+
     describe "skipping hooks with env var" $ do
       let runHookyWithEnv env args = do
             HookyExe hooky <- getFixture
