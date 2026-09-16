@@ -35,7 +35,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
     it "fails when a symlink is broken" $ do
@@ -43,7 +43,7 @@ spec = do
         withGitRepo $ \git -> do
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -53,7 +53,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo-link.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
 
     it "fails when target is deleted" $ do
@@ -64,7 +64,7 @@ spec = do
           git.exec ["add", "foo.txt", "foo-link.txt"]
           git.exec ["commit", "-m", "Initial commit"]
           git.exec ["rm", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -74,7 +74,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!*.txt"] config)
-          (defaultOptions ["foo-link.txt"])
+          defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
   describe "check_case_conflict" $ do
@@ -86,7 +86,7 @@ spec = do
           writeFile "foo.txt" ""
           writeFile "bar.txt" ""
           git.exec ["add", "foo.txt", "bar.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
     it "fails when files conflict" $ do
@@ -99,7 +99,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "FOO.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -114,7 +114,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["FOO.txt"]
+          runLintRules git.client config defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` False
 
     it "handles large number of files" . withGitRepo $ \git -> do
@@ -122,7 +122,7 @@ spec = do
         writeFile ("test-" <> show x) ""
       git.exec ["add", "."]
       maybe (failTest "Timed out") pure <=< timeout (100 * 1000) $ do
-        report1 <- runLintRules git.client config $ defaultOptions ["foo.txt", "bar.txt"]
+        report1 <- runLintRules git.client config defaultOptionsAllFiles
         lintReportSuccess report1 `shouldBe` True
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -133,7 +133,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["FOO.txt"] config)
-          (defaultOptions ["foo.txt", "FOO.txt"])
+          defaultOptionsAllFiles
       lintReportSuccess report `shouldBe` True
 
   describe "check_merge_conflict" $ do
@@ -318,6 +318,11 @@ defaultOptions files =
     { autofix = False
     , files = files
     }
+
+-- | Default options for rules that run on all files. The files in the options
+-- are not set, as those are only used for PerFile rules.
+defaultOptionsAllFiles :: LintOptions
+defaultOptionsAllFiles = defaultOptions [error "LintOptions.files unexpectedly used"]
 
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =

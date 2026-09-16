@@ -68,7 +68,7 @@ runLintRules git config options = do
   pure . LintReport . Map.unionsWith (<>) $
     [ Map.singleton Nothing nonFileLintResults
     , allFilesLintResults
-    , Map.fromList fileLintResults
+    , Map.fromList $ filter (not . null . snd) fileLintResults
     ]
 
 runNonFileLintRules ::
