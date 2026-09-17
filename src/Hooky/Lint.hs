@@ -21,7 +21,7 @@ module Hooky.Lint (
 ) where
 
 import Control.DeepSeq (NFData (..))
-import Control.Monad (forM, when, (>=>))
+import Control.Monad (forM, when)
 import Data.Bifunctor (first)
 import Data.ByteString qualified as ByteString
 import Data.Char (isSpace)
@@ -44,18 +44,18 @@ import Hooky.Config (
   LintRuleRule (..),
   RepoConfig (..),
  )
+import Hooky.Internal.GitFile (GitFile, resolveGitFiles)
+import Hooky.Internal.GitFile qualified as GitFile
 import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
-import System.Directory qualified as Dir
-import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import UnliftIO.Exception (evaluateDeep, tryJust)
 
 data LintOptions = LintOptions
   { autofix :: Bool
-  , files :: [FilePath]
+  , files :: Set GitFile
   }
 
 {----- runLintRules -----}
@@ -69,7 +69,11 @@ runLintRules git config options = do
         ]
   nonFileLintResults <- runNonFileLintRules git allLinters
   allFilesLintResults <- runAllFilesLintRules git allLinters
-  fileLintResults <- mapM (runPerFileLintRules git options allLinters) options.files
+  fileLintResults <-
+    mapM (runPerFileLintRules git options allLinters) $
+      [ file
+      | GitFile.GitFile file <- Set.toList options.files
+      ]
   let report =
         Map.unionsWith (<>) $
           [ Map.mapMaybe NonEmpty.nonEmpty $ Map.singleton Nothing nonFileLintResults
@@ -95,13 +99,14 @@ runAllFilesLintRules ::
   [(LintRule, LintAction)] ->
   IO (Map (Maybe FilePath) (NonEmpty (Text, LintResult)))
 runAllFilesLintRules git allLinters = do
-  files <- Set.fromList <$> git.getFiles
+  files <- resolveGitFiles git GitFile.FilesAll
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
     Logging.debug $ "Running linter: " <> rule.name
-    results <- run git $ Set.filter (matchesGlobs rule.fileGlobs . Text.pack) files
+    results <- run git $ Set.filter (isIncluded rule) files
     pure [(Just fp, NonEmpty.singleton (rule.name, result)) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
+  isIncluded rule file = matchesGlobs rule.fileGlobs (Text.pack file.path)
 
 runPerFileLintRules ::
   GitClient ->
@@ -134,7 +139,7 @@ runPerFileLintRules git options allLinters file =
   linters =
     [ (rule, run)
     | (rule, LintActionPerFile run) <- allLinters
-    , matchesGlobs rule.fileGlobs (Text.pack file)
+    , matchesGlobs rule.fileGlobs . Text.pack $ file
     ]
   readFileMaybe fp = do
     result <-
@@ -218,7 +223,7 @@ getSuccessfulHooks report =
 
 data LintAction
   = LintActionNoFile (GitClient -> IO LintResult)
-  | LintActionAllFiles (GitClient -> Set FilePath -> IO [(FilePath, LintResult)])
+  | LintActionAllFiles (GitClient -> Set GitFile -> IO [(FilePath, LintResult)])
   | LintActionPerFile (GitClient -> FilePath -> Text -> IO (LintResult, Text))
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
@@ -244,43 +249,19 @@ fromLintRule LintRule{rule} =
 
 lint_CheckBrokenSymlinks :: LintAction
 lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
-  map (,failure) <$> filterM (isBrokenSymlink files) (Set.toList files)
+  let filePaths = Set.map (.path) files
+      dirPaths = Set.map FilePath.takeDirectory filePaths
+  pure
+    [ (link.path, failure)
+    | GitFile.GitFile_Symlink link <- Set.toList files
+    , link.target `Set.notMember` (if link.isDir then dirPaths else filePaths)
+    ]
  where
   failure = LintFailed "File is a broken symlink. Remove or exclude from rule"
-  filterM f xs =
-    fmap catMaybes . forM xs $ \x -> do
-      p <- f x
-      pure $ if p then Just x else Nothing
-  -- Don't include `fp` as an argument, to ensure this is memoized
-  isBrokenSymlink files =
-    let dirs = Set.map FilePath.takeDirectory files
-     in getSymlinkTarget >=> \case
-          Nothing -> pure False
-          Just target -> do
-            isDir <- Dir.doesDirectoryExist target
-            pure $ target `Set.notMember` (if isDir then dirs else files)
-  getSymlinkTarget fp = do
-    -- Common case is non-symlink. Faster to check pathIsSymbolicLink than to
-    -- catch getSymbolicLinkTarget exceptions.
-    isLink <- Dir.pathIsSymbolicLink fp
-    if not isLink
-      then pure Nothing
-      else do
-        targetRaw <- Dir.getSymbolicLinkTarget fp
-        targetResolved <- resolvePath (FilePath.takeDirectory fp </> targetRaw)
-        pure $ Just targetResolved
-
-  -- Similar to canonicalizePath, except keeps the path relative if relative
-  resolvePath fp = do
-    if FilePath.isAbsolute fp
-      then Dir.canonicalizePath fp
-      else do
-        cwd <- Dir.getCurrentDirectory
-        FilePath.makeRelative cwd <$> Dir.canonicalizePath (cwd </> fp)
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
-  let allFiles = map Text.pack . Set.toList $ files
+  let allFiles = [Text.pack file.path | file <- Set.toList files]
       collisionMap = Map.fromListWith (<>) [(Text.toLower s, [s]) | s <- allFiles]
   pure
     [ (Text.unpack fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " rest)

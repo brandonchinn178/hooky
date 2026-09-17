@@ -1,15 +1,12 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OrPatterns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Run (
-  -- * runHooks
   RunOptions (..),
   runHooks,
-
-  -- * FileTargets
-  FileTargets (..),
 ) where
 
 import Control.Concurrent (threadDelay)
@@ -41,6 +38,7 @@ import Hooky.Config qualified as GlobalConfig (GlobalConfig (..))
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Config qualified as RepoConfig (RepoConfig (..))
 import Hooky.Error (HookyError, abort)
+import Hooky.Internal.GitFile (GitFile, GitFileTarget (..), resolveGitFiles)
 import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
   OutputFormat (..),
@@ -82,7 +80,7 @@ import UnliftIO.Temporary (withSystemTempFile)
 data RunOptions = RunOptions
   { mode :: RunMode
   , hooksToRun :: Maybe (Set Text)
-  , fileTargets :: FileTargets
+  , fileTarget :: GitFileTarget
   , format :: OutputFormat
   , stash :: Bool
   }
@@ -97,7 +95,7 @@ instance HasField "autofix" RunOptions Bool where
 runHooks :: GitClient -> Config -> RunOptions -> IO ()
 runHooks git config options = do
   (if options.stash then withStash git options.mode else id) $ do
-    files <- resolveTargets git options.fileTargets
+    files <- resolveGitFiles git options.fileTarget
     let hooks =
           [ resolveHook config options files hook
           | hook <- config.repo.hooks
@@ -241,12 +239,12 @@ data HookCmd = HookCmd
   { name :: Text
   , args :: NonEmpty Text
   , passFiles :: PassFilesMode
-  , files :: [FilePath]
+  , files :: Set GitFile
   , isSkip :: Bool
   }
   deriving (Show, Eq)
 
-resolveHook :: Config -> RunOptions -> [FilePath] -> HookConfig -> HookCmd
+resolveHook :: Config -> RunOptions -> Set GitFile -> HookConfig -> HookCmd
 resolveHook config options files hookConfig =
   HookCmd
     { name = hookConfig.name
@@ -255,11 +253,14 @@ resolveHook config options files hookConfig =
           then hookConfig.cmdArgs `NonEmpty.appendList` hookConfig.fixArgs
           else hookConfig.cmdArgs `NonEmpty.appendList` hookConfig.checkArgs
     , passFiles = hookConfig.passFiles
-    , files = filter isIncluded files
+    , files = Set.filter isIncluded files
     , isSkip = hookConfig.name `Set.member` config.skippedHooks
     }
  where
-  isIncluded fp = matchesGlobs (config.repo.fileGlobs <> hookConfig.fileGlobs) (Text.pack fp)
+  isIncluded file =
+    matchesGlobs
+      (config.repo.fileGlobs <> hookConfig.fileGlobs)
+      (Text.pack file.path)
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
@@ -273,7 +274,7 @@ runHook checkDiffs hookOutput hook = do
           PassFiles_XArgsParallel -> runXargs $ "-P0" NonEmpty.<| hook.args
           PassFiles_File ->
             withSystemTempFile ("hooky." <> Text.unpack hook.name <> ".XXXXX") $ \fp h -> do
-              mapM_ (IO.hPutStrLn h) hook.files
+              forM_ hook.files $ \file -> IO.hPutStrLn h file.path
               IO.hClose h
               run $ hook.args `NonEmpty.appendList` [Text.pack $ '@' : fp]
       pure $
@@ -285,8 +286,8 @@ runHook checkDiffs hookOutput hook = do
     runProc cmd args $ \_ -> pure ()
   runXargs args =
     runProc "xargs" (["-0"] <> NonEmpty.toList args) $ \h ->
-      forM_ hook.files $ \fp -> do
-        IO.hPutStr h fp
+      forM_ hook.files $ \file -> do
+        IO.hPutStr h file.path
         IO.hPutChar h '\0'
   runProc cmd args populateStdin =
     runStreamedProcess cmd args hookOutput.onLine populateStdin `catchAny` \e -> do
@@ -342,24 +343,6 @@ shouldShowStdout format = \case
   HookPassed -> format >= Format_Verbose
   HookSkipped -> format >= Format_Verbose
 
-{----- FileTargets -----}
-
-data FileTargets
-  = FilesGiven [FilePath]
-  | FilesModified
-  | FilesStaged
-  | FilesAll
-  | FilesPrev
-  deriving (Show, Eq)
-
-resolveTargets :: GitClient -> FileTargets -> IO [FilePath]
-resolveTargets git = \case
-  FilesGiven files -> pure files
-  FilesModified -> git.getChangedFiles []
-  FilesStaged -> git.getChangedFiles ["--staged"]
-  FilesAll -> git.getFiles
-  FilesPrev -> git.getChangedFiles ["HEAD~1..HEAD"]
-
 {----- HookOutput -----}
 
 data HookOutput = HookOutput
@@ -408,6 +391,6 @@ initDiffChecker git mode = \hookOutput action -> do
       hookOutput.log "Files were modified. Run `git add` to stage the changes."
       pure HookFailed
     Mode_FixAdd -> do
-      modifiedFiles <- git.getChangedFiles []
-      git.exec ("add" : modifiedFiles)
+      modifiedFiles <- resolveGitFiles git FilesModified
+      git.exec $ "add" : map (.path) (Set.toList modifiedFiles)
       pure result

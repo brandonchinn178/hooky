@@ -16,6 +16,7 @@ import Skeletest.Predicate qualified as P
 import System.Directory (
   createDirectory,
   createDirectoryLink,
+  createFileLink,
   removeFile,
   renameFile,
  )
@@ -35,22 +36,33 @@ spec = do
       (code0, _, stderr0) <- git.run ["commit", "-m", "initial commit"]
       code0 `shouldBe` ExitFailure 1
       stderr0 `shouldSatisfy` P.hasInfix "1 hook failed"
+      stderr0 `shouldNotSatisfy` P.hasInfix "[warn]"
 
       writeFile "bad.txt" "bad\n"
       git.exec ["add", "bad.txt"]
       (code1, _, stderr1) <- git.run ["commit", "-m", "commit"]
       code1 `shouldBe` ExitSuccess
       stderr1 `shouldSatisfy` P.hasInfix "1 hook passed"
+      stderr1 `shouldNotSatisfy` P.hasInfix "[warn]"
 
   describe "hooky run" $ do
     it "defaults to --stash --staged" $ do
       withGitRepo $ \git -> do
         commitHookyEofFixer git
         writeFile "good.txt" "good\n"
-        writeFile "bad1.txt" "bad"
-        writeFile "bad2.txt" "bad\n"
-        git.exec ["add", "good.txt", "bad2.txt"]
-        writeFile "bad2.txt" "bad"
+        writeFile "bad-in-stage.txt" "bad"
+        writeFile "bad-untracked.txt" "bad"
+        git.exec ["add", "good.txt", "bad-in-stage.txt"]
+        writeFile "bad-in-stage.txt" "good\n"
+        runHooky ["run"] `shouldSatisfy` P.returns (P.eq (ExitFailure 1))
+
+      withGitRepo $ \git -> do
+        commitHookyEofFixer git
+        writeFile "good.txt" "good\n"
+        writeFile "bad-modified.txt" "good\n"
+        writeFile "bad-untracked.txt" "bad"
+        git.exec ["add", "good.txt", "bad-modified.txt"]
+        writeFile "bad-modified.txt" "bad"
         runHooky ["run"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
 
     it "errors if multiple file selection flags are passed" $ do
@@ -166,15 +178,22 @@ spec = do
         code `shouldBe` ExitFailure 1
         stdout `shouldSatisfy` P.hasInfix "foo/bar.txt"
 
-    it "runs on all files in symlinked directory" $ do
+    it "treats symlinked files as a symlink" $ do
+      withGitRepo $ \git -> do
+        commitHookyEofFixer git
+        writeFile "foo.txt" "bad"
+        createFileLink "foo" "foo-link"
+        (code, _, _) <- readHooky ["run", "foo-link"]
+        code `shouldBe` ExitSuccess
+
+    it "treats symlinked directories as a symlink" $ do
       withGitRepo $ \git -> do
         commitHookyEofFixer git
         createDirectory "foo"
         createDirectoryLink "foo" "foo-link"
-        writeFile "foo/bar.txt" "asdf"
-        (code, stdout, _) <- readHooky ["run", "foo-link"]
-        code `shouldBe` ExitFailure 1
-        stdout `shouldSatisfy` P.hasInfix "foo/bar.txt"
+        writeFile "foo/bar.txt" "bad"
+        (code, _, _) <- readHooky ["run", "foo-link"]
+        code `shouldBe` ExitSuccess
 
     it "runs on all files in implicit symlinked directory" $ do
       withGitRepo $ \git -> do

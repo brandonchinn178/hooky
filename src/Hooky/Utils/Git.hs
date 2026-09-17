@@ -8,12 +8,12 @@ module Hooky.Utils.Git (
 ) where
 
 import Control.Monad (void)
-import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (HookyError (..))
 import Hooky.Utils.Process (runProcessWith)
+import Hooky.Utils.Text qualified as Text
 import UnliftIO.Exception (fromEitherM)
 
 data GitClient = GitClient
@@ -45,19 +45,4 @@ instance HasField "clearChanges" GitClient (IO ()) where
 
 -- | Get lines from the output of a git command that accepts "-z"
 instance HasField "getLinesFrom" GitClient ([String] -> IO [Text]) where
-  getField git args = split <$> git.query (args <> ["-z"])
-   where
-    split = filter (not . Text.null) . Text.splitOn (Text.pack "\0")
-
-instance HasField "getFiles" GitClient (IO [FilePath]) where
-  getField git = do
-    files <- git.getLinesFrom ["ls-files"]
-    deletedFiles <- git.getLinesFrom ["ls-files", "--deleted"]
-    pure . map Text.unpack $ files `without` deletedFiles
-   where
-    -- 'y' is usually small, so this should be O(n) in the common case.
-    x `without` y = filter (`Set.notMember` Set.fromList y) x
-instance HasField "getChangedFiles" GitClient ([String] -> IO [FilePath]) where
-  getField git args =
-    map Text.unpack
-      <$> git.getLinesFrom (["diff", "--name-only", "--diff-filter=AMR"] <> args)
+  getField git args = Text.splitNULs <$> git.query (args <> ["-z"])

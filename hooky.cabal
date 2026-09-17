@@ -28,6 +28,7 @@ library
     Hooky.Error
     Hooky.Lint
     Hooky.Run
+    Hooky.Internal.GitFile
     Hooky.Internal.Logging
     Hooky.Internal.Messages
     Hooky.Internal.Output
@@ -37,6 +38,7 @@ library
     Hooky.Utils.Glob
     Hooky.Utils.Process
     Hooky.Utils.Term
+    Hooky.Utils.Text
   build-depends:
       base < 5
     , ansi-terminal
@@ -94,6 +96,7 @@ test-suite hooky-tests
     Hooky.TestUtils.Hooky
   build-depends:
       base
+    , containers
     , directory
     , filepath
     , hooky
