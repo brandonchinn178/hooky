@@ -125,7 +125,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
   -- Treat untracked files as intent-to-add files so they're included in the
   -- stash, then unstage them afterwards
   saveUntracked = do
-    untrackedFiles <- git.getFilesWith ["ls-files", "--others", "--exclude-standard"]
+    untrackedFiles <- map Text.unpack <$> git.getLinesFrom ["ls-files", "--others", "--exclude-standard"]
     if null untrackedFiles
       then pure Nothing
       else do
@@ -165,7 +165,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
         Text.writeFile stashFile diff
         Messages.info $ "Stashed changes to: " <> TextL.pack stashFile
         git.clearChanges
-        itaFiles <- git.getFilesWith ["diff", "--name-only", "--diff-filter=A"]
+        itaFiles <- map Text.unpack <$> git.getLinesFrom ["diff", "--name-only", "--diff-filter=A"]
         unless (null itaFiles) $ do
           git.exec $ ["rm", "--force", "--"] <> itaFiles -- Remove intent-to-add files; persisted in the diff
         pure $ Just (stashFile, itaFiles)

@@ -43,17 +43,21 @@ instance HasField "getDiff" GitClient (IO Text) where
 instance HasField "clearChanges" GitClient (IO ()) where
   getField git = git.exec ["checkout", "--no-recurse-submodules", "--", "."]
 
-instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
+-- | Get lines from the output of a git command that accepts "-z"
+instance HasField "getLinesFrom" GitClient ([String] -> IO [Text]) where
   getField git args = split <$> git.query (args <> ["-z"])
    where
-    split = map Text.unpack . filter (not . Text.null) . Text.splitOn (Text.pack "\0")
+    split = filter (not . Text.null) . Text.splitOn (Text.pack "\0")
+
 instance HasField "getFiles" GitClient (IO [FilePath]) where
   getField git = do
-    files <- git.getFilesWith ["ls-files"]
-    deletedFiles <- git.getFilesWith ["ls-files", "--deleted"]
-    pure $ files `without` deletedFiles
+    files <- git.getLinesFrom ["ls-files"]
+    deletedFiles <- git.getLinesFrom ["ls-files", "--deleted"]
+    pure . map Text.unpack $ files `without` deletedFiles
    where
     -- 'y' is usually small, so this should be O(n) in the common case.
     x `without` y = filter (`Set.notMember` Set.fromList y) x
 instance HasField "getChangedFiles" GitClient ([String] -> IO [FilePath]) where
-  getField git args = git.getFilesWith $ ["diff", "--name-only", "--diff-filter=AMR"] <> args
+  getField git args =
+    map Text.unpack
+      <$> git.getLinesFrom (["diff", "--name-only", "--diff-filter=AMR"] <> args)

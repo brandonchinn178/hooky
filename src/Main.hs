@@ -198,7 +198,7 @@ resolveFiles git cmd =
     path <- getSymbolicLinkTarget rawPath `catchAny` \_ -> pure rawPath
     getPathType path >>= \case
       Just PathType_File -> pure [path]
-      Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
+      Just PathType_Dir -> map Text.unpack <$> git.getLinesFrom ["ls-files", "-co", "--exclude-standard", path]
       Nothing -> abort $ "File does not exist: " <> Text.pack path
 
 handleErrors :: IO a -> IO a
