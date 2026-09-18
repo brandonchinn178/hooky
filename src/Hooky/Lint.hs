@@ -25,6 +25,8 @@ import Data.Bifunctor (first)
 import Data.ByteString qualified as ByteString
 import Data.Char (isSpace)
 import Data.Foldable (foldlM)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
@@ -68,9 +70,9 @@ runLintRules git config options = do
   allFilesLintResults <- runAllFilesLintRules git allLinters
   fileLintResults <- mapM (runPerFileLintRules git options allLinters) options.files
   pure . LintReport . Map.unionsWith (<>) $
-    [ Map.singleton Nothing nonFileLintResults
+    [ Map.mapMaybe NonEmpty.nonEmpty $ Map.singleton Nothing nonFileLintResults
     , allFilesLintResults
-    , Map.fromList $ filter (not . null . snd) fileLintResults
+    , Map.mapMaybe NonEmpty.nonEmpty $ Map.fromList fileLintResults
     ]
 
 runNonFileLintRules ::
@@ -88,13 +90,13 @@ runNonFileLintRules git allLinters =
 runAllFilesLintRules ::
   GitClient ->
   [(LintRule, LintAction)] ->
-  IO (Map (Maybe FilePath) [(Text, LintResult)])
+  IO (Map (Maybe FilePath) (NonEmpty (Text, LintResult)))
 runAllFilesLintRules git allLinters = do
   files <- Set.fromList <$> git.getFiles
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
     Logging.debug $ "Running linter: " <> rule.name
     results <- run git $ Set.filter (matchesGlobs rule.fileGlobs . Text.pack) files
-    pure [(Just fp, [(rule.name, result)]) | (fp, result) <- results]
+    pure [(Just fp, NonEmpty.singleton (rule.name, result)) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
 
@@ -157,10 +159,18 @@ runPerFileLintRules git options allLinters file =
 {----- LintReport -----}
 
 -- | Map from filepath to the hooks and their results.
-newtype LintReport = LintReport {unwrap :: Map (Maybe FilePath) [(Text, LintResult)]}
+newtype LintReport = LintReport
+  { unwrap ::
+      Map
+        (Maybe FilePath)
+        (NonEmpty (Text, LintResult))
+  }
 
 lintReportSuccess :: LintReport -> Bool
-lintReportSuccess = all ((== LintSuccess) . snd) . concat . Map.elems . (.unwrap)
+lintReportSuccess report =
+  all ((== LintSuccess) . snd)
+    . (concat . Map.elems . Map.map NonEmpty.toList)
+    $ report.unwrap
 
 renderLintReport :: LintReport -> Text
 renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
@@ -169,7 +179,7 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
     [ Text.intercalate "\n" $
         (maybe "FAILURES" Text.pack mFile <> ":")
           : [ "- [" <> hook <> "] " <> msg
-            | (hook, result) <- results
+            | (hook, result) <- NonEmpty.toList results
             , Just msg <-
                 pure $
                   case result of
@@ -188,7 +198,7 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
       else [Text.intercalate "\n" $ "Hooks passed:" : map ("- " <>) successfulHooks]
 
 getSuccessfulHooks :: LintReport -> [Text]
-getSuccessfulHooks =
+getSuccessfulHooks report =
   -- Map (Maybe FilePath) [(Text, LintResult)]
   --   => [(Text, LintResult)]
   --   => [(Text, isSuccess)]
@@ -197,8 +207,8 @@ getSuccessfulHooks =
     . Map.filter Monoid.getAll
     . Map.fromListWith (<>)
     . map (fmap (Monoid.All . (== LintSuccess)))
-    . (concat . Map.elems)
-    . (.unwrap)
+    . (concat . Map.elems . Map.map NonEmpty.toList)
+    $ report.unwrap
 
 {----- LintAction -----}
 
