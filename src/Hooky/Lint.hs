@@ -20,6 +20,7 @@ module Hooky.Lint (
   toGlob,
 ) where
 
+import Control.DeepSeq (NFData (..))
 import Control.Monad (forM, when, (>=>))
 import Data.Bifunctor (first)
 import Data.ByteString qualified as ByteString
@@ -50,7 +51,7 @@ import System.Directory qualified as Dir
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
-import UnliftIO.Exception (tryJust)
+import UnliftIO.Exception (evaluateDeep, tryJust)
 
 data LintOptions = LintOptions
   { autofix :: Bool
@@ -69,11 +70,13 @@ runLintRules git config options = do
   nonFileLintResults <- runNonFileLintRules git allLinters
   allFilesLintResults <- runAllFilesLintRules git allLinters
   fileLintResults <- mapM (runPerFileLintRules git options allLinters) options.files
-  pure . LintReport . Map.unionsWith (<>) $
-    [ Map.mapMaybe NonEmpty.nonEmpty $ Map.singleton Nothing nonFileLintResults
-    , allFilesLintResults
-    , Map.mapMaybe NonEmpty.nonEmpty $ Map.fromList fileLintResults
-    ]
+  let report =
+        Map.unionsWith (<>) $
+          [ Map.mapMaybe NonEmpty.nonEmpty $ Map.singleton Nothing nonFileLintResults
+          , allFilesLintResults
+          , Map.mapMaybe NonEmpty.nonEmpty $ Map.fromList fileLintResults
+          ]
+  evaluateDeep $ LintReport report
 
 runNonFileLintRules ::
   GitClient ->
@@ -165,6 +168,7 @@ newtype LintReport = LintReport
         (Maybe FilePath)
         (NonEmpty (Text, LintResult))
   }
+  deriving (NFData)
 
 lintReportSuccess :: LintReport -> Bool
 lintReportSuccess report =
@@ -219,6 +223,12 @@ data LintAction
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
   deriving (Show, Eq)
+
+instance NFData LintResult where
+  rnf = \case
+    LintSuccess -> ()
+    LintFixed -> ()
+    LintFailed msg -> rnf msg
 
 fromLintRule :: LintRule -> LintAction
 fromLintRule LintRule{rule} =

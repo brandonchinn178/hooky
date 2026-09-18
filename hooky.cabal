@@ -43,6 +43,7 @@ library
     , bytestring
     , concurrent-output
     , containers
+    , deepseq
     , directory
     , filepath
     , Glob
