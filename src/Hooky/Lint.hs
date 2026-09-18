@@ -23,7 +23,6 @@ module Hooky.Lint (
 import Control.DeepSeq (NFData (..))
 import Control.Monad (forM, when)
 import Data.Bifunctor (first)
-import Data.ByteString qualified as ByteString
 import Data.Char (isSpace)
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
@@ -37,7 +36,6 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Data.Text.IO qualified as Text
 import Hooky.Config (
   Config (..),
   LintRule (..),
@@ -49,8 +47,11 @@ import Hooky.Internal.GitFile qualified as GitFile
 import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (Glob, matchesGlobs, toGlob)
-import System.FilePath qualified as FilePath
+import Hooky.Utils.OsPath qualified as OsPath
+import System.File.OsPath qualified as OsPath
 import System.IO.Error (isDoesNotExistError)
+import System.OsPath (OsPath)
+import System.OsPath qualified as OsPath
 import UnliftIO.Exception (evaluateDeep, tryJust)
 
 data LintOptions = LintOptions
@@ -97,7 +98,7 @@ runNonFileLintRules git allLinters =
 runAllFilesLintRules ::
   GitClient ->
   [(LintRule, LintAction)] ->
-  IO (Map (Maybe FilePath) (NonEmpty (Text, LintResult)))
+  IO (Map (Maybe OsPath) (NonEmpty (Text, LintResult)))
 runAllFilesLintRules git allLinters = do
   files <- resolveGitFiles git GitFile.FilesAll
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
@@ -106,14 +107,14 @@ runAllFilesLintRules git allLinters = do
     pure [(Just fp, NonEmpty.singleton (rule.name, result)) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
-  isIncluded rule file = matchesGlobs rule.fileGlobs (Text.pack file.path)
+  isIncluded rule file = matchesGlobs rule.fileGlobs (OsPath.toText file.path)
 
 runPerFileLintRules ::
   GitClient ->
   LintOptions ->
   [(LintRule, LintAction)] ->
-  FilePath ->
-  IO (Maybe FilePath, [(Text, LintResult)])
+  OsPath ->
+  IO (Maybe OsPath, [(Text, LintResult)])
 runPerFileLintRules git options allLinters file =
   -- Skip reading file if there are no per-file linters to run
   (if null linters then pure Nothing else readFileMaybe file) >>= \case
@@ -133,20 +134,21 @@ runPerFileLintRules git options allLinters file =
           contents1
           linters
       when (any ((== LintFixed) . snd) results) $ do
-        Text.writeFile file contents2
+        OsPath.writeFile' file (Text.encodeUtf8 contents2)
       pure (Just file, results)
  where
   linters =
     [ (rule, run)
     | (rule, LintActionPerFile run) <- allLinters
-    , matchesGlobs rule.fileGlobs . Text.pack $ file
+    , matchesGlobs rule.fileGlobs . OsPath.toText $ file
     ]
   readFileMaybe fp = do
     result <-
       tryJust
         (\e -> if isDoesNotExistError e then Just e else Nothing)
-        (ByteString.readFile fp)
+        (OsPath.readFile' fp)
     pure $
+      -- Skip reading non-utf8 files
       case result of
         Right bs | Right s <- Text.decodeUtf8' bs -> Just s
         _ -> Nothing
@@ -170,7 +172,7 @@ runPerFileLintRules git options allLinters file =
 newtype LintReport = LintReport
   { unwrap ::
       Map
-        (Maybe FilePath)
+        (Maybe OsPath)
         (NonEmpty (Text, LintResult))
   }
   deriving (NFData)
@@ -186,7 +188,7 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
  where
   failureMsgs =
     [ Text.intercalate "\n" $
-        (maybe "FAILURES" Text.pack mFile <> ":")
+        (maybe "FAILURES" OsPath.toText mFile <> ":")
           : [ "- [" <> hook <> "] " <> msg
             | (hook, result) <- NonEmpty.toList results
             , Just msg <-
@@ -208,7 +210,7 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
 
 getSuccessfulHooks :: LintReport -> [Text]
 getSuccessfulHooks report =
-  -- Map (Maybe FilePath) [(Text, LintResult)]
+  -- Map (Maybe OsPath) [(Text, LintResult)]
   --   => [(Text, LintResult)]
   --   => [(Text, isSuccess)]
   --   => Map Text (All isSuccess)
@@ -223,8 +225,8 @@ getSuccessfulHooks report =
 
 data LintAction
   = LintActionNoFile (GitClient -> IO LintResult)
-  | LintActionAllFiles (GitClient -> Set GitFile -> IO [(FilePath, LintResult)])
-  | LintActionPerFile (GitClient -> FilePath -> Text -> IO (LintResult, Text))
+  | LintActionAllFiles (GitClient -> Set GitFile -> IO [(OsPath, LintResult)])
+  | LintActionPerFile (GitClient -> OsPath -> Text -> IO (LintResult, Text))
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
   deriving (Show, Eq)
@@ -250,7 +252,7 @@ fromLintRule LintRule{rule} =
 lint_CheckBrokenSymlinks :: LintAction
 lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
   let filePaths = Set.map (.path) files
-      dirPaths = Set.map FilePath.takeDirectory filePaths
+      dirPaths = Set.map OsPath.takeDirectory filePaths
   pure
     [ (link.path, failure)
     | GitFile.GitFile_Symlink link <- Set.toList files
@@ -261,10 +263,14 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
-  let allFiles = [Text.pack file.path | file <- Set.toList files]
-      collisionMap = Map.fromListWith (<>) [(Text.toLower s, [s]) | s <- allFiles]
+  let allFiles = [file.path | file <- Set.toList files]
+      collisionMap =
+        Map.fromListWith (<>) $
+          [ (Text.toLower (OsPath.toText fp), [fp])
+          | fp <- allFiles
+          ]
   pure
-    [ (Text.unpack fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " rest)
+    [ (fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " (map OsPath.toText rest))
     | fp : rest@(_ : _) <- Map.elems collisionMap
     ]
 

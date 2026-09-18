@@ -1,6 +1,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Hooky.LintSpec (spec) where
 
@@ -21,6 +22,7 @@ import Hooky.Lint (
   toGlob,
  )
 import Hooky.TestUtils.Git (withGitRepo)
+import Hooky.Utils.OsPath qualified as OsPath
 import Skeletest
 import Skeletest.Predicate qualified as P
 import System.Directory (
@@ -32,6 +34,7 @@ import System.Directory (
   removeFile,
  )
 import System.FilePath ((</>))
+import System.OsPath (osp)
 import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
@@ -381,12 +384,12 @@ defaultOptions =
     }
 
 gitFiles :: [FilePath] -> Set GitFile
-gitFiles = Set.fromList . map GitFile
+gitFiles = Set.fromList . map (GitFile . OsPath.fromFilePath)
 
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =
   Config
-    { repoConfigPath = ".hooky.kdl"
+    { repoConfigPath = [osp|.hooky.kdl|]
     , repo =
         RepoConfig
           { fileGlobs = []

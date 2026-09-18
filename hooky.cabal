@@ -33,9 +33,9 @@ library
     Hooky.Internal.Messages
     Hooky.Internal.Output
     Hooky.Internal.Temp
-    Hooky.Utils.Directory
     Hooky.Utils.Git
     Hooky.Utils.Glob
+    Hooky.Utils.OsPath
     Hooky.Utils.Process
     Hooky.Utils.Term
     Hooky.Utils.Text
@@ -47,9 +47,11 @@ library
     , containers
     , deepseq
     , directory
+    , file-io
     , filepath
     , Glob
     , kdl-hs >= 1.1.0
+    , os-string
     , process
     , scientific
     , text
@@ -66,6 +68,7 @@ executable hooky
       base
     , containers
     , directory
+    , file-io
     , filepath
     , hooky
     , optparse-applicative

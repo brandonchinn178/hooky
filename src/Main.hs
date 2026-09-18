@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
@@ -19,6 +20,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
@@ -60,29 +62,31 @@ import Hooky.Run (
   runHooks,
  )
 import Hooky.Utils.Git (GitClient (..), initGitClient)
+import Hooky.Utils.OsPath qualified as OsPath
 import Hooky.Utils.Term qualified as Term
 import Options.Applicative qualified as Opt
 import Options.Applicative.Types qualified as Opt.Internal
 import Paths_hooky qualified
-import System.Directory (
+import System.Directory.OsPath (
   doesFileExist,
   getPermissions,
   makeAbsolute,
   renameFile,
   setPermissions,
  )
-import System.Directory qualified as Permissions (Permissions (..))
+import System.Directory.OsPath qualified as Permissions (Permissions (..))
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
-import System.FilePath ((</>))
+import System.File.OsPath qualified as OsPath
 import System.IO qualified as IO
+import System.OsPath (OsPath, addExtension, osp, (</>))
 import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
 
 data CLIOptions = CLIOptions
   { run :: CLICommandAction
-  , configFile :: Maybe FilePath
+  , configFile :: Maybe OsPath
   , verbose :: Bool
   }
 
@@ -121,7 +125,7 @@ loadCLIOptions =
   parseOptions = do
     run <- parseInternalCommand <|> parseCommand
     configFile <-
-      Opt.optional . Opt.strOption . mconcat $
+      Opt.optional . Opt.option (OsPath.fromText <$> Opt.str) . mconcat $
         [ Opt.long "config"
         , Opt.short 'c'
         , Opt.help "Path to config file (default: .hooky.kdl)"
@@ -168,7 +172,7 @@ main = handleErrors $ do
 
   repoConfigPath <-
     case cli.configFile of
-      Nothing -> pure $ git.repo </> ".hooky.kdl"
+      Nothing -> pure $ git.repo </> [osp|.hooky.kdl|]
       Just fp -> makeAbsolute fp
   config <- loadConfig repoConfigPath
 
@@ -214,7 +218,7 @@ instance IsCLICommand Cmd_Install where
         ]
     pure Cmd_Install{..}
   cliCommandRun _ cmd git config = do
-    hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
+    hookFile <- git.getPath [osp|hooks/pre-commit|]
     backupOldHookFile hookFile
 
     let useAbsolute = config.global.useAbsolute || cmd.useAbsolute
@@ -223,8 +227,8 @@ instance IsCLICommand Cmd_Install where
         then Text.pack <$> getExecutablePath
         else pure "hooky"
 
-    let configPath = Text.pack config.repoConfigPath
-    Text.writeFile hookFile . Text.unlines $
+    let configPath = OsPath.toText config.repoConfigPath
+    OsPath.writeFile' hookFile . Text.encodeUtf8 . Text.unlines $
       [ "hooky_exe=" <> quote hookyExe
       , "if ! command -v \"$hooky_exe\" 2>&1 >/dev/null; then"
       , if useAbsolute
@@ -245,7 +249,7 @@ instance IsCLICommand Cmd_Install where
       ]
     makeExecutable hookFile
 
-    TextL.putStrLn . Term.green $ "🚀 Hooky installed at: " <> TextL.pack hookFile
+    TextL.putStrLn . Term.green $ "🚀 Hooky installed at: " <> OsPath.toLazyText hookFile
    where
     quote s = "'" <> s <> "'"
     makeExecutable fp = do
@@ -256,11 +260,11 @@ instance IsCLICommand Cmd_Install where
       exists <- doesFileExist fp
       -- TODO: Don't back up if reinstalling hooky
       when exists $ do
-        let backup = fp <> ".bak"
+        let backup = addExtension fp [osp|bak|]
         renameFile fp backup
         Messages.log . TextL.unlines $
           [ "Found previously installed pre-commit hooks."
-          , "Backed up to: " <> TextL.pack backup
+          , "Backed up to: " <> OsPath.toLazyText backup
           ]
 
 {----- hooky __git -----}
