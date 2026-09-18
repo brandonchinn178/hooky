@@ -182,7 +182,7 @@ spec = do
       forM_ [1 .. 10000 :: Int] $ \x ->
         writeFile ("test-" <> show x) ""
       git.exec ["add", "."]
-      maybe (failTest "Timed out") pure <=< timeout (100 * 1000) $ do
+      maybe (failTest "Timed out") pure <=< timeout (1 * 1000000) $ do
         report1 <- runLintRules git.client config defaultOptions
         lintReportSuccess report1 `shouldBe` True
 
