@@ -20,6 +20,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
 import Data.Text.Lazy (LazyText)
 import Data.Text.Lazy qualified as TextL
@@ -49,6 +50,7 @@ import Hooky.Internal.Output (
 import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (matchesGlobs)
+import Hooky.Utils.OsPath qualified as OsPath
 import Hooky.Utils.Process (renderShell, runStreamedProcess)
 import Hooky.Utils.Term qualified as Term
 import System.Console.Regions (
@@ -62,8 +64,9 @@ import System.Console.Regions (
 import System.Console.Regions qualified as Region (RegionLayout (..))
 import System.Directory (findExecutable)
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath ((</>))
+import System.File.OsPath qualified as OsPath
 import System.IO qualified as IO
+import System.OsPath ((</>))
 import System.Process (getCurrentPid)
 import UnliftIO.Async (pooledMapConcurrentlyN, withAsync)
 import UnliftIO.Exception (
@@ -159,9 +162,9 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
       else do
         pid <- getCurrentPid
         date <- Time.formatTime Time.defaultTimeLocale "%Y%m%d" <$> Time.getCurrentTime
-        let stashFile = hookyTmpDir </> ("stash-" <> date <> "-" <> show pid)
-        Text.writeFile stashFile diff
-        Messages.info $ "Stashed changes to: " <> TextL.pack stashFile
+        let stashFile = hookyTmpDir </> OsPath.fromFilePath ("stash-" <> date <> "-" <> show pid)
+        OsPath.writeFile' stashFile (Text.encodeUtf8 diff)
+        Messages.info $ "Stashed changes to: " <> OsPath.toLazyText stashFile
         git.clearChanges
         itaFiles <- map Text.unpack <$> git.getLinesFrom ["diff", "--name-only", "--diff-filter=A"]
         unless (null itaFiles) $ do
@@ -172,14 +175,14 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
     Just (stashFile, itaFiles) -> do
       let runGitApply =
             git.exec . concat $
-              [ ["apply", "--whitespace=nowarn", stashFile]
+              [ ["apply", "--whitespace=nowarn", OsPath.toFilePath stashFile]
               , case mode of
                   Mode_FixAdd -> ["--3way"]
                   _ -> ["--quiet"]
               ]
       try runGitApply >>= \case
         Right _ -> do
-          Messages.info $ "Restored changes from: " <> TextL.pack stashFile
+          Messages.info $ "Restored changes from: " <> OsPath.toLazyText stashFile
         Left (_ :: HookyError) -> do
           case mode of
             Mode_Check
@@ -260,7 +263,7 @@ resolveHook config options files hookConfig =
   isIncluded file =
     matchesGlobs
       (config.repo.fileGlobs <> hookConfig.fileGlobs)
-      (Text.pack file.path)
+      (OsPath.toText file.path)
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
@@ -274,7 +277,7 @@ runHook checkDiffs hookOutput hook = do
           PassFiles_XArgsParallel -> runXargs $ "-P0" NonEmpty.<| hook.args
           PassFiles_File ->
             withSystemTempFile ("hooky." <> Text.unpack hook.name <> ".XXXXX") $ \fp h -> do
-              forM_ hook.files $ \file -> IO.hPutStrLn h file.path
+              forM_ hook.files $ \file -> Text.hPutStrLn h $ OsPath.toText file.path
               IO.hClose h
               run $ hook.args `NonEmpty.appendList` [Text.pack $ '@' : fp]
       pure $
@@ -286,9 +289,7 @@ runHook checkDiffs hookOutput hook = do
     runProc cmd args $ \_ -> pure ()
   runXargs args =
     runProc "xargs" (["-0"] <> NonEmpty.toList args) $ \h ->
-      forM_ hook.files $ \file -> do
-        IO.hPutStr h file.path
-        IO.hPutChar h '\0'
+      forM_ hook.files $ \file -> Text.hPutStr h $ OsPath.toText file.path <> "\NUL"
   runProc cmd args populateStdin =
     runStreamedProcess cmd args hookOutput.onLine populateStdin `catchAny` \e -> do
       -- See if it failed due to executable not being found
@@ -392,5 +393,5 @@ initDiffChecker git mode = \hookOutput action -> do
       pure HookFailed
     Mode_FixAdd -> do
       modifiedFiles <- resolveGitFiles git FilesModified
-      git.exec $ "add" : map (.path) (Set.toList modifiedFiles)
+      git.exec $ "add" : [OsPath.toFilePath file.path | file <- Set.toList modifiedFiles]
       pure result

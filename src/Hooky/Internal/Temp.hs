@@ -1,11 +1,13 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module Hooky.Internal.Temp (
   hookyTmpDir,
 ) where
 
 import Control.Monad (forM_, when)
 import Data.Time qualified as Time
-import Hooky.Utils.Directory (listDirectoryRecur)
-import System.Directory (
+import Hooky.Utils.OsPath (listDirectoryRecur)
+import System.Directory.OsPath (
   XdgDirectory (..),
   createDirectoryIfMissing,
   getModificationTime,
@@ -13,15 +15,16 @@ import System.Directory (
   removePathForcibly,
  )
 import System.IO.Unsafe (unsafePerformIO)
+import System.OsPath (OsPath, osp)
 
-hookyTmpDir :: FilePath
+hookyTmpDir :: OsPath
 hookyTmpDir = unsafePerformIO getHookyTmpDir
 {-# NOINLINE hookyTmpDir #-}
 
-getHookyTmpDir :: IO FilePath
+getHookyTmpDir :: IO OsPath
 getHookyTmpDir = do
   now <- Time.getCurrentTime
-  tmpdir <- getXdgDirectory XdgCache "hooky"
+  tmpdir <- getXdgDirectory XdgCache [osp|hooky|]
   createDirectoryIfMissing True tmpdir
   cleanup now tmpdir
   pure tmpdir

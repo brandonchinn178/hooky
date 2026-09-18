@@ -4,6 +4,7 @@
 {-# LANGUAGE OrPatterns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -42,25 +43,27 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Text.IO qualified as Text
+import Data.Text.Encoding qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (abort)
 import Hooky.Internal.Output (OutputFormat (..), parseOutputFormat)
 import Hooky.Utils.Glob (Glob, toGlob)
+import Hooky.Utils.OsPath qualified as OsPath
 import KDL.Arrow qualified as KDL
-import System.Directory (XdgDirectory (..), doesFileExist, getXdgDirectory)
+import System.Directory.OsPath (XdgDirectory (..), doesFileExist, getXdgDirectory)
 import System.Environment (lookupEnv)
-import System.FilePath ((</>))
+import System.File.OsPath qualified as OsPath
+import System.OsPath (OsPath, osp, (</>))
 
 data Config = Config
-  { repoConfigPath :: FilePath
+  { repoConfigPath :: OsPath
   , repo :: RepoConfig
   , global :: GlobalConfig
   , skippedHooks :: Set Text
   }
   deriving (Show, Eq)
 
-loadConfig :: FilePath -> IO Config
+loadConfig :: OsPath -> IO Config
 loadConfig repoConfigPath = do
   global <- loadGlobalConfig
   repo <- loadRepoConfig repoConfigPath
@@ -79,15 +82,15 @@ data RepoConfig = RepoConfig
   }
   deriving (Show, Eq)
 
-loadRepoConfig :: FilePath -> IO RepoConfig
+loadRepoConfig :: OsPath -> IO RepoConfig
 loadRepoConfig path = do
   configFileExists <- doesFileExist path
   unless configFileExists $ do
-    abort $ "Config file doesn't exist: " <> Text.pack path
-  content <- Text.readFile path
+    abort $ "Config file doesn't exist: " <> OsPath.toText path
+  content <- Text.decodeUtf8 <$> OsPath.readFile' path
   case parseRepoConfig content of
     Right config -> pure config
-    Left e -> abort $ "Could not parse config: " <> Text.pack path <> "\n" <> e
+    Left e -> abort $ "Could not parse config: " <> OsPath.toText path <> "\n" <> e
 
 parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
@@ -142,14 +145,14 @@ loadGlobalConfig :: IO GlobalConfig
 loadGlobalConfig = do
   useGlobal <- not . maybe False (== "1") <$> lookupEnv "HOOKY_NO_GLOBAL"
 
-  hookyConfigDir <- getXdgDirectory XdgConfig "hooky"
-  let path = hookyConfigDir </> "settings.kdl"
+  hookyConfigDir <- getXdgDirectory XdgConfig [osp|hooky|]
+  let path = hookyConfigDir </> [osp|settings.kdl|]
   exists <- doesFileExist path
 
-  content <- if useGlobal && exists then Text.readFile path else pure ""
+  content <- if useGlobal && exists then Text.decodeUtf8 <$> OsPath.readFile' path else pure ""
   case parseGlobalConfig content of
     Right config -> pure config
-    Left e -> abort $ "Could not parse config: " <> Text.pack path <> "\n" <> e
+    Left e -> abort $ "Could not parse config: " <> OsPath.toText path <> "\n" <> e
 
 parseGlobalConfig :: Text -> Either Text GlobalConfig
 parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Hooky.TestUtils.Git (
   TestGitClient (..),
@@ -13,17 +14,18 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Utils.Git (GitClient (..))
-import System.Directory (
+import Hooky.Utils.OsPath qualified as OsPath
+import System.Directory.OsPath (
   createDirectoryIfMissing,
   withCurrentDirectory,
  )
 import System.Exit (ExitCode (..))
-import System.FilePath ((</>))
 import System.IO qualified as IO
 import System.IO.Temp (withSystemTempDirectory)
+import System.OsPath (OsPath, osp, (</>))
 import System.Process qualified as Process
 
-data TestGitClient = TestGitClient {repo :: FilePath}
+data TestGitClient = TestGitClient {repo :: OsPath}
 
 instance HasField "client" TestGitClient GitClient where
   getField TestGitClient{repo} = GitClient{repo}
@@ -34,7 +36,7 @@ instance HasField "run" TestGitClient ([String] -> IO (ExitCode, Text, Text)) wh
     (code, stdoutS, stderrS) <-
       flip Process.readCreateProcessWithExitCode "" $
         Process.proc "git" $
-          ["-C", git.repo] <> args
+          ["-C", OsPath.toFilePath git.repo] <> args
     let (stdout, stderr) = (toText stdoutS, toText stderrS)
     unless (Text.null stdout) $ do
       log_ $ "stdout:\n" <> stdout
@@ -55,7 +57,7 @@ instance HasField "exec" TestGitClient ([String] -> IO ()) where
 withGitRepo :: (TestGitClient -> IO a) -> IO a
 withGitRepo action =
   withSystemTempDirectory "git.XXXX" $ \tmpdir -> do
-    let git = TestGitClient{repo = tmpdir </> "repo"}
+    let git = TestGitClient{repo = OsPath.fromFilePath tmpdir </> [osp|repo|]}
     createDirectoryIfMissing True git.repo
     withCurrentDirectory git.repo $ do
       git.exec ["init", "--initial-branch", "main"]
