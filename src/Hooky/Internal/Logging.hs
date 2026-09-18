@@ -1,15 +1,24 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Internal.Logging (
   initialize,
   LogLevel (..),
   Logger,
+
+  -- * Log methods
   debug,
   info,
   warn,
   error,
+
+  -- * Impure log methods
+  traceDebug,
+  traceInfo,
+  traceWarn,
+  traceError,
 ) where
 
 import Control.Monad (when)
@@ -58,4 +67,30 @@ sendLog :: LogLevel -> Text -> IO ()
 sendLog level msg = do
   logger <- readIORef loggerRef
   when (level >= logger.level) $ do
-    TextL.putStrLn . Term.gray . TextL.fromStrict $ msg
+    TextL.putStrLn . levelColor level . TextL.fromStrict $ showLevel level <> msg
+ where
+  showLevel = \case
+    LogLevel_Debug -> "[debug] "
+    LogLevel_Info -> "[info] "
+    LogLevel_Warn -> "[warn] "
+    LogLevel_Error -> "[error] "
+  levelColor = \case
+    LogLevel_Debug -> Term.gray
+    LogLevel_Info -> Term.gray
+    LogLevel_Warn -> Term.yellow
+    LogLevel_Error -> Term.red
+
+traceDebug :: Text -> a -> a
+traceDebug = sendTrace LogLevel_Debug
+
+traceInfo :: Text -> a -> a
+traceInfo = sendTrace LogLevel_Info
+
+traceWarn :: Text -> a -> a
+traceWarn = sendTrace LogLevel_Warn
+
+traceError :: Text -> a -> a
+traceError = sendTrace LogLevel_Error
+
+sendTrace :: LogLevel -> Text -> a -> a
+sendTrace level msg a = unsafePerformIO $ sendLog level msg >> pure a

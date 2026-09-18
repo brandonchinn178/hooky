@@ -33,7 +33,14 @@ import Hooky.Config (
   parseRunMode,
   renderRunMode,
  )
-import Hooky.Error (abort, abortImpure)
+import Hooky.Error (abortImpure)
+import Hooky.Internal.GitFile (
+  GitFileTarget,
+  GitFileTargetArg,
+  parseGitFileTargetArg,
+  resolveGitFiles,
+ )
+import Hooky.Internal.GitFile qualified as GitFile
 import Hooky.Internal.Logging qualified as Logging
 import Hooky.Internal.Messages qualified as Messages
 import Hooky.Internal.Output (
@@ -49,11 +56,9 @@ import Hooky.Lint (
   runLintRules,
  )
 import Hooky.Run (
-  FileTargets (..),
   RunOptions (..),
   runHooks,
  )
-import Hooky.Utils.Directory (PathType (..), getPathType)
 import Hooky.Utils.Git (GitClient (..), initGitClient)
 import Hooky.Utils.Term qualified as Term
 import Options.Applicative qualified as Opt
@@ -62,7 +67,6 @@ import Paths_hooky qualified
 import System.Directory (
   doesFileExist,
   getPermissions,
-  getSymbolicLinkTarget,
   makeAbsolute,
   renameFile,
   setPermissions,
@@ -72,7 +76,7 @@ import System.Environment (getExecutablePath)
 import System.Exit (ExitCode, exitFailure)
 import System.FilePath ((</>))
 import System.IO qualified as IO
-import UnliftIO.Exception (Exception (..), SomeException (..), catchAny, handleJust)
+import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
 {----- CLI Options -----}
 
@@ -95,16 +99,7 @@ data CLICommandDef
 
 class IsCLICommand cmd where
   cliCommandParse :: Opt.Parser cmd
-
-  cliCommandRun :: cmd -> CLICommandAction
-
-  cliCommandFiles :: cmd -> Maybe ([FilePath], [FilePath] -> cmd)
-  cliCommandFiles _ = Nothing
-
-mkAction :: (IsCLICommand cmd) => Proxy cmd -> cmd -> CLICommandAction
-mkAction _ cmd git config = do
-  cmd' <- resolveFiles git cmd
-  cliCommandRun cmd' git config
+  cliCommandRun :: Proxy cmd -> cmd -> CLICommandAction
 
 loadCLIOptions :: IO CLIOptions
 loadCLIOptions =
@@ -153,7 +148,7 @@ loadCLIOptions =
 
   mkCommand CLICommandDef{..} =
     Opt.command name $
-      Opt.info (mkAction cmdType <$> cliCommandParse) $
+      Opt.info (cliCommandRun cmdType <$> cliCommandParse) $
         Opt.progDesc description
 
 {----- Entrypoint -----}
@@ -178,28 +173,6 @@ main = handleErrors $ do
   config <- loadConfig repoConfigPath
 
   cli.run git config
-
--- | Resolve files specified as arguments.
---
--- Expands `@file` arguments to files specified in the given file.
-resolveFiles :: (IsCLICommand cmd) => GitClient -> cmd -> IO cmd
-resolveFiles git cmd =
-  case cliCommandFiles cmd of
-    Nothing -> pure cmd
-    Just (files, setFiles) -> do
-      files' <- concatMapM resolveFileRefs files >>= concatMapM resolveFilePaths
-      pure $ setFiles files'
- where
-  concatMapM f = fmap concat . mapM f
-  resolveFileRefs = \case
-    '@' : file -> map Text.unpack . Text.lines <$> Text.readFile file
-    path -> pure [path]
-  resolveFilePaths rawPath = do
-    path <- getSymbolicLinkTarget rawPath `catchAny` \_ -> pure rawPath
-    getPathType path >>= \case
-      Just PathType_File -> pure [path]
-      Just PathType_Dir -> git.getFilesWith ["ls-files", "-co", "--exclude-standard", path]
-      Nothing -> abort $ "File does not exist: " <> Text.pack path
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
@@ -240,7 +213,7 @@ instance IsCLICommand Cmd_Install where
         , Opt.help "Whether to install the absolute path to hooky"
         ]
     pure Cmd_Install{..}
-  cliCommandRun cmd git config = do
+  cliCommandRun _ cmd git config = do
     hookFile <- Text.unpack <$> git.getPath "hooks/pre-commit"
     backupOldHookFile hookFile
 
@@ -310,12 +283,12 @@ instance IsCLICommand Cmd_RunGit where
     mode <- parseRunModeCLI
     format <- parseFormatCLI
     pure Cmd_RunGit{..}
-  cliCommandRun cmd git config = do
+  cliCommandRun _ cmd git config = do
     runHooks git config $
       RunOptions
         { mode = fromMaybe config.global.mode cmd.mode
         , hooksToRun = Nothing
-        , fileTargets = FilesStaged
+        , fileTarget = GitFile.FilesStaged
         , format = fromMaybe config.global.format cmd.format
         , stash = True
         }
@@ -333,7 +306,7 @@ cmdRun =
 data Cmd_Run = Cmd_Run
   { mode :: RunMode
   , hooksToRun :: Maybe (Set Text)
-  , fileTargets :: FileTargets
+  , fileTarget :: GitFileTarget
   , stash :: Bool
   , format :: Maybe OutputFormat
   }
@@ -347,25 +320,25 @@ instance IsCLICommand Cmd_Run where
           , Opt.short 'k'
           , Opt.help "Hook(s) to run (defaults to all hooks)"
           ]
-    mFileTargets <-
+    mFileTarget <-
       cliOneOfOptional $
-        [ FilesGiven <$> parseFilesCLI
-        , Opt.flag' FilesModified . mconcat $
+        [ GitFile.FilesGiven <$> parseFilesCLI
+        , Opt.flag' GitFile.FilesModified . mconcat $
             [ Opt.long "modified"
             , Opt.short 'm'
             , Opt.help "Run on modified files"
             ]
-        , Opt.flag' FilesStaged . mconcat $
+        , Opt.flag' GitFile.FilesStaged . mconcat $
             [ Opt.long "staged"
             , Opt.short 's'
             , Opt.help "Run on staged files"
             ]
-        , Opt.flag' FilesAll . mconcat $
+        , Opt.flag' GitFile.FilesAll . mconcat $
             [ Opt.long "all"
             , Opt.short 'a'
             , Opt.help "Run on all files"
             ]
-        , Opt.flag' FilesPrev . mconcat $
+        , Opt.flag' GitFile.FilesPrev . mconcat $
             [ Opt.long "prev"
             , Opt.short '1'
             , Opt.help "Run on files modified in the previous commit"
@@ -379,26 +352,21 @@ instance IsCLICommand Cmd_Run where
     format <- parseFormatCLI
 
     pure $
-      let (fileTargets, stash) =
-            case mFileTargets of
-              Nothing -> (FilesStaged, True)
+      let (fileTarget, stash) =
+            case mFileTarget of
+              Nothing -> (GitFile.FilesStaged, True)
               Just ft -> (ft, stashFlag)
        in Cmd_Run{mode = Mode_Check, ..}
 
-  cliCommandRun cmd git config = do
+  cliCommandRun _ cmd git config = do
     runHooks git config $
       RunOptions
         { mode = cmd.mode
         , hooksToRun = cmd.hooksToRun
-        , fileTargets = cmd.fileTargets
+        , fileTarget = cmd.fileTarget
         , format = fromMaybe config.global.format cmd.format
         , stash = cmd.stash
         }
-
-  cliCommandFiles Cmd_Run{..} =
-    case fileTargets of
-      FilesGiven files -> Just (files, \files' -> Cmd_Run{fileTargets = FilesGiven files', ..})
-      _ -> Nothing
 
 {----- hooky fix ------}
 
@@ -417,7 +385,6 @@ instance IsCLICommand Cmd_Fix where
    where
     update Cmd_Run{..} = Cmd_Fix Cmd_Run{mode = Mode_Fix, ..}
   cliCommandRun = coerce $ cliCommandRun @Cmd_Run
-  cliCommandFiles = coerce $ cliCommandFiles @Cmd_Run
 
 {----- hooky lint ------}
 
@@ -430,13 +397,13 @@ cmdLint =
     }
 
 data Cmd_Lint = Cmd_Lint
-  { files :: [FilePath]
+  { fileTarget :: GitFileTarget
   , autofix :: Bool
   }
 
 instance IsCLICommand Cmd_Lint where
   cliCommandParse = do
-    files <- parseFilesCLI
+    fileTarget <- GitFile.FilesGiven <$> parseFilesCLI
     autofix <-
       Opt.switch . mconcat $
         [ Opt.long "fix"
@@ -444,19 +411,17 @@ instance IsCLICommand Cmd_Lint where
         ]
     pure Cmd_Lint{..}
 
-  cliCommandRun cmd git config = do
-    report <- runLintRules git config options
+  cliCommandRun _ cmd git config = do
+    files <- resolveGitFiles git cmd.fileTarget
+    report <-
+      runLintRules git config $
+        LintOptions
+          { autofix = cmd.autofix
+          , files
+          }
     Text.putStrLn $ renderLintReport report
     unless (lintReportSuccess report) $ do
       exitFailure
-   where
-    options =
-      LintOptions
-        { autofix = cmd.autofix
-        , files = cmd.files
-        }
-
-  cliCommandFiles Cmd_Lint{..} = Just (files, \files' -> Cmd_Lint{files = files', ..})
 
 {----- CLI Helpers -----}
 
@@ -488,9 +453,9 @@ cliOneOfOptional parsers = validate <$> traverse Opt.optional parsers
     | c : _ <- [c | Opt.Internal.OptShort c <- names] = Just ['-', c]
     | otherwise = Nothing
 
-parseFilesCLI :: Opt.Parser [FilePath]
+parseFilesCLI :: Opt.Parser [GitFileTargetArg]
 parseFilesCLI =
-  Opt.some . Opt.strArgument . mconcat $
+  Opt.some . Opt.argument (parseGitFileTargetArg <$> Opt.str) . mconcat $
     [ Opt.metavar "FILES"
     , Opt.help . concat $
         [ "Files to run on. If a directory is specified, recursively finds all files."

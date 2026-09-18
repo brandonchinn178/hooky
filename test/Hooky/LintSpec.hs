@@ -5,9 +5,12 @@
 module Hooky.LintSpec (spec) where
 
 import Control.Monad (forM_, (<=<))
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Hooky.Config (Config (..), RepoConfig (..))
 import Hooky.Config qualified as LintRule (LintRule (..))
+import Hooky.Internal.GitFile (GitFile (..))
 import Hooky.Lint (
   LintOptions (..),
   LintRule (..),
@@ -43,7 +46,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "handles symlinks to directories" $ do
@@ -53,7 +56,7 @@ spec = do
           writeFile "foo/bar.txt" ""
           createDirectoryLink "foo" "foo-link"
           git.exec ["add", "foo", "foo-link"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "handles relative path symlinks" $ do
@@ -68,7 +71,7 @@ spec = do
           writeFile "subdir/nested.txt" ""
           createFileLink "nested.txt" "subdir/nested-link.txt"
           git.exec ["add", "top-level.txt", "subdir"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "handles symlink with .. in deep symlink" $ do
@@ -80,13 +83,7 @@ spec = do
           createFileLink "subdir1/subdir2/subdir3" "deep-link"
           createFileLink "deep-link/../nested.txt" "nested-link.txt"
           git.exec ["add", "subdir1", "deep-link", "nested-link.txt"]
-          runLintRules git.client config $
-            defaultOptions
-              [ "subdir1/subdir2/nested.txt"
-              , "subdir1/subdir2/subdir3/.gitkeep"
-              , "deep-link"
-              , "nested-link.txt"
-              ]
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "fails when a symlink is broken" $ do
@@ -94,7 +91,7 @@ spec = do
         withGitRepo $ \git -> do
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -104,7 +101,7 @@ spec = do
           writeFile "foo.txt" "example"
           createFileLink "foo.txt" "foo-link.txt"
           git.exec ["add", "foo-link.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
 
     it "fails when target is deleted" $ do
@@ -115,7 +112,7 @@ spec = do
           git.exec ["add", "foo.txt", "foo-link.txt"]
           git.exec ["commit", "-m", "Initial commit"]
           git.exec ["rm", "foo.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
 
     it "fails when target is absolute path" $ do
@@ -125,7 +122,7 @@ spec = do
           writeFile "foo.txt" ""
           createFileLink (root </> "foo.txt") "foo-link.txt"
           git.exec ["add", "foo.txt", "foo-link.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt", "foo-link.txt"]
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -135,7 +132,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!*.txt"] config)
-          defaultOptionsAllFiles
+          defaultOptions
       lintReportSuccess report `shouldBe` True
 
   describe "check_case_conflict" $ do
@@ -147,7 +144,7 @@ spec = do
           writeFile "foo.txt" ""
           writeFile "bar.txt" ""
           git.exec ["add", "foo.txt", "bar.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "fails when files conflict" $ do
@@ -160,7 +157,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -175,7 +172,7 @@ spec = do
           writeFile "FOO.TXT" ""
           git.exec ["add", "FOO.TXT"]
           git.exec ["checkout", "foo.txt"]
-          runLintRules git.client config defaultOptionsAllFiles
+          runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` False
 
     it "handles large number of files" . withGitRepo $ \git -> do
@@ -183,7 +180,7 @@ spec = do
         writeFile ("test-" <> show x) ""
       git.exec ["add", "."]
       maybe (failTest "Timed out") pure <=< timeout (100 * 1000) $ do
-        report1 <- runLintRules git.client config defaultOptionsAllFiles
+        report1 <- runLintRules git.client config defaultOptions
         lintReportSuccess report1 `shouldBe` True
 
     it "skips files failing glob" . withGitRepo $ \git -> do
@@ -194,7 +191,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["FOO.txt"] config)
-          defaultOptionsAllFiles
+          defaultOptions
       lintReportSuccess report `shouldBe` True
 
   describe "check_merge_conflict" $ do
@@ -208,7 +205,7 @@ spec = do
           git.exec ["switch", "-c", "branch2"] >> writeFile "bar.txt" "branch2" >> git.exec ["add", "bar.txt"] >> git.exec ["commit", "-m", "branch2"]
           git.exec ["switch", "main"]
           git.exec ["merge", "branch1", "branch2"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
     it "fails when there are merge conflicts" $ do
@@ -219,7 +216,7 @@ spec = do
           git.exec ["switch", "-c", "branch2", "main"] >> writeFile "foo.txt" "branch2" >> git.exec ["add", "foo.txt"] >> git.exec ["commit", "-m", "branch2"]
           git.exec ["switch", "main"]
           git.exec ["merge", "branch1", "branch2"] `shouldSatisfy` P.throws (P.anything @SomeException)
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -233,7 +230,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!foo.txt"] config)
-          (defaultOptions ["foo.txt"])
+          defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
   describe "end_of_file_fixer" $ do
@@ -244,7 +241,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
     it "succeeds when file is empty" $ do
@@ -252,7 +249,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" ""
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
     it "fails when file has no trailing newlines" $ do
@@ -260,7 +257,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -269,7 +266,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n\n\n\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` False
 
     it "autofixes when file has no trailing newlines" $ do
@@ -277,7 +274,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest"
           git.exec ["add", "foo.txt"]
-          report <- runLintRules git.client config $ (defaultOptions ["foo.txt"]){autofix = True}
+          report <- runLintRules git.client config defaultOptions{autofix = True, files = gitFiles ["foo.txt"]}
           readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
       lintReportSuccess report `shouldBe` False
@@ -288,7 +285,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n\n\n\n"
           git.exec ["add", "foo.txt"]
-          report <- runLintRules git.client config $ (defaultOptions ["foo.txt"]){autofix = True}
+          report <- runLintRules git.client config defaultOptions{autofix = True, files = gitFiles ["foo.txt"]}
           readFile "foo.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
       lintReportSuccess report `shouldBe` False
@@ -299,7 +296,7 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!*.txt"] config)
-          (defaultOptions ["foo.txt"])
+          defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
   describe "no_commit_to_branch" $ do
@@ -309,13 +306,13 @@ spec = do
       report <-
         withGitRepo $ \git -> do
           git.exec ["switch", "-c", "test"]
-          runLintRules git.client (mkConfig "main") (defaultOptions [])
+          runLintRules git.client (mkConfig "main") defaultOptions
       lintReportSuccess report `shouldBe` True
 
     it "fails when committing on bad branch" $ do
       report <-
         withGitRepo $ \git -> do
-          runLintRules git.client (mkConfig "main") (defaultOptions [])
+          runLintRules git.client (mkConfig "main") defaultOptions
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -323,7 +320,7 @@ spec = do
       report <-
         withGitRepo $ \git -> do
           git.exec ["switch", "-c", "release-2.0"]
-          runLintRules git.client (mkConfig "release-*") (defaultOptions [])
+          runLintRules git.client (mkConfig "release-*") defaultOptions
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -335,7 +332,7 @@ spec = do
         withGitRepo $ \git -> do
           writeFile "foo.txt" "test\ntest\n"
           git.exec ["add", "foo.txt"]
-          runLintRules git.client config $ defaultOptions ["foo.txt"]
+          runLintRules git.client config defaultOptions{files = gitFiles ["foo.txt"]}
       lintReportSuccess report `shouldBe` True
 
     it "fails when line has trailing whitespace" $ do
@@ -345,7 +342,7 @@ spec = do
           writeFile "end-tab.txt" "test\t\t\ntest\n"
           git.exec ["add", "end-space.txt", "end-tab.txt"]
           runLintRules git.client config $
-            defaultOptions ["end-space.txt", "end-tab.txt"]
+            defaultOptions{files = gitFiles ["end-space.txt", "end-tab.txt"]}
       lintReportSuccess report `shouldBe` False
       renderLintReport report `shouldSatisfy` P.matchesSnapshot
 
@@ -357,7 +354,10 @@ spec = do
           git.exec ["add", "end-space.txt", "end-tab.txt"]
           report <-
             runLintRules git.client config $
-              (defaultOptions ["end-space.txt", "end-tab.txt"]){autofix = True}
+              defaultOptions
+                { autofix = True
+                , files = gitFiles ["end-space.txt", "end-tab.txt"]
+                }
           readFile "end-space.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           readFile "end-tab.txt" `shouldSatisfy` P.returns (P.eq "test\ntest\n")
           pure report
@@ -370,20 +370,18 @@ spec = do
         runLintRules
           git.client
           (withFiles ["!*.txt"] config)
-          (defaultOptions ["bad.txt"])
+          defaultOptions{files = gitFiles ["bad.txt"]}
       lintReportSuccess report `shouldBe` True
 
-defaultOptions :: [FilePath] -> LintOptions
-defaultOptions files =
+defaultOptions :: LintOptions
+defaultOptions =
   LintOptions
     { autofix = False
-    , files = files
+    , files = mempty
     }
 
--- | Default options for rules that run on all files. The files in the options
--- are not set, as those are only used for PerFile rules.
-defaultOptionsAllFiles :: LintOptions
-defaultOptionsAllFiles = defaultOptions [error "LintOptions.files unexpectedly used"]
+gitFiles :: [FilePath] -> Set GitFile
+gitFiles = Set.fromList . map GitFile
 
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =

@@ -8,12 +8,12 @@ module Hooky.Utils.Git (
 ) where
 
 import Control.Monad (void)
-import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (HookyError (..))
 import Hooky.Utils.Process (runProcessWith)
+import Hooky.Utils.Text qualified as Text
 import UnliftIO.Exception (fromEitherM)
 
 data GitClient = GitClient
@@ -43,17 +43,6 @@ instance HasField "getDiff" GitClient (IO Text) where
 instance HasField "clearChanges" GitClient (IO ()) where
   getField git = git.exec ["checkout", "--no-recurse-submodules", "--", "."]
 
-instance HasField "getFilesWith" GitClient ([String] -> IO [FilePath]) where
-  getField git args = split <$> git.query (args <> ["-z"])
-   where
-    split = map Text.unpack . filter (not . Text.null) . Text.splitOn (Text.pack "\0")
-instance HasField "getFiles" GitClient (IO [FilePath]) where
-  getField git = do
-    files <- git.getFilesWith ["ls-files"]
-    deletedFiles <- git.getFilesWith ["ls-files", "--deleted"]
-    pure $ files `without` deletedFiles
-   where
-    -- 'y' is usually small, so this should be O(n) in the common case.
-    x `without` y = filter (`Set.notMember` Set.fromList y) x
-instance HasField "getChangedFiles" GitClient ([String] -> IO [FilePath]) where
-  getField git args = git.getFilesWith $ ["diff", "--name-only", "--diff-filter=AMR"] <> args
+-- | Get lines from the output of a git command that accepts "-z"
+instance HasField "getLinesFrom" GitClient ([String] -> IO [Text]) where
+  getField git args = Text.splitNULs <$> git.query (args <> ["-z"])
