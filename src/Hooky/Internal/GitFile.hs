@@ -141,7 +141,7 @@ resolveGitFiles git = \case
           [oldMode0, newMode, _oldHash, _newHash, status] <- pure $ Text.words s
           (':', _oldMode) <- Text.uncons oldMode0
           (path, rest') <-
-            if status `elem` ["C", "R"]
+            if any (`Text.isPrefixOf` status) ["C", "R"]
               then do
                 _src : dest : rest' <- pure rest
                 Just (dest, rest')
