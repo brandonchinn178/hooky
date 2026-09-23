@@ -83,6 +83,14 @@ spec = do
         removeFile "bad.txt"
         runHooky ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
 
+    it "works after `git mv`" $ do
+      withGitRepo $ \git -> do
+        commitHookyEofFixer git
+        writeFile "good.txt" ""
+        git.exec ["add", "good.txt"] >> git.exec ["commit", "-m", "test"]
+        git.exec ["mv", "good.txt", "good-moved.txt"]
+        runHooky ["run"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
     it "stashes intent-to-add files" $ do
       withGitRepo $ \git -> do
         commitHookyEofFixer git
