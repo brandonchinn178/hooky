@@ -1,3 +1,7 @@
+# v1.0.7
+
+* Fix regression loading files with whitespace in name
+
 # v1.0.6
 
 * Fix regression running after `git mv`
