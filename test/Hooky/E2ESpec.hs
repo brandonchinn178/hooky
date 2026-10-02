@@ -83,6 +83,16 @@ spec = do
         removeFile "bad.txt"
         runHooky ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
 
+    it "works on files with whitespace in name" $ do
+      withGitRepo $ \git -> do
+        commitHookyEofFixer git
+        writeFile "foo bar.txt" "bad"
+        git.exec ["add", "foo bar.txt"]
+        runHooky ["run", "-a"] `shouldSatisfy` P.returns (P.eq (ExitFailure 1))
+        writeFile "foo bar.txt" "good\n"
+        git.exec ["add", "foo bar.txt"]
+        runHooky ["run", "-a"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
     it "works after `git mv`" $ do
       withGitRepo $ \git -> do
         commitHookyEofFixer git
