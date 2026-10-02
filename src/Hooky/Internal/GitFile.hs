@@ -16,11 +16,13 @@ module Hooky.Internal.GitFile (
   resolveGitFiles,
 ) where
 
+import Control.Applicative ((<|>))
 import Control.Monad (guard, (<=<))
 import Data.Function (on)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import GHC.Records (HasField (..))
@@ -158,10 +160,13 @@ resolveGitFiles git = \case
 
     -- ls-files --stage should output lines in the following format:
     -- <mode> <hash> <stage>TAB<path>
-    let parseLine line =
-          case Text.words line of
-            [mode, _hash, _stage, path] -> Just (mode, OsPath.fromText path)
-            _ -> Logging.traceWarn ("Unexpected line when fetching tracked files: " <> (Text.pack . show) line) Nothing
+    let parseLine line = parseLineM line <|> Logging.traceWarn (warnMsg line) Nothing
+        warnMsg line = "Unexpected line when fetching tracked files: " <> (Text.pack . show) line
+        parseLineM s0 = do
+          (mode, s1) <- breakOn " " s0
+          (_hash, s2) <- breakOn " " s1
+          (_stage, path) <- breakOn "\t" s2
+          Just (mode, OsPath.fromText path)
         notDeleted file@(_, path) = do
           guard $ path `Set.notMember` deletedFiles
           Just file
@@ -215,3 +220,9 @@ ifM :: [(IO Bool, IO a)] -> IO (Maybe a)
 ifM = \case
   (cond, action) : xs -> cond >>= \p -> if p then Just <$> action else ifM xs
   [] -> pure Nothing
+
+breakOn :: Text -> Text -> Maybe (Text, Text)
+breakOn delim s = do
+  let (pre, post) = Text.breakOn delim s
+  post' <- Text.stripPrefix delim post
+  Just (pre, post')
