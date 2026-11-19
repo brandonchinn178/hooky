@@ -11,6 +11,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Error (HookyError (..))
+import Hooky.Internal.Logging qualified as Logging
 import System.Exit (ExitCode (..))
 import System.IO qualified as IO
 import System.Process (CreateProcess)
@@ -29,6 +30,7 @@ runProcessWith ::
   [String] ->
   IO (Either HookyError Text)
 runProcessWith f cmd args = do
+  Logging.debug $ "Running proc: " <> Text.show cmd <> " " <> Text.show args
   (code, stdout, stderr) <- Process.readCreateProcessWithExitCode (f $ Process.proc cmd args) ""
   pure $
     case code of
@@ -46,6 +48,7 @@ runStreamedProcess ::
   (IO.Handle -> IO ()) ->
   IO ExitCode
 runStreamedProcess cmd args onOutputLine populateStdin = do
+  Logging.debug $ "Running proc (streamed): " <> Text.show cmd <> " " <> Text.show args
   (stdin_r, stdin_w) <- Process.createPipe
   (stdout_r, stdout_w) <- Process.createPipe
   IO.hSetEncoding stdout_r IO.utf8
