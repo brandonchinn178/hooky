@@ -62,6 +62,17 @@ spec = do
           runLintRules git.client config defaultOptions
       lintReportSuccess report `shouldBe` True
 
+    it "handles symlinks to directory ancestors" $ do
+      report <-
+        withGitRepo $ \git -> do
+          createDirectory "foo"
+          createDirectory "foo/bar"
+          writeFile "foo/bar/file.txt" ""
+          createDirectoryLink "foo" "foo-link"
+          git.exec ["add", "foo", "foo-link"]
+          runLintRules git.client config defaultOptions
+      lintReportSuccess report `shouldBe` True
+
     it "handles relative path symlinks" $ do
       report <-
         withGitRepo $ \git -> do
