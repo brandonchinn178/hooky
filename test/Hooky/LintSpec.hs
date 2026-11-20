@@ -6,8 +6,8 @@
 module Hooky.LintSpec (spec) where
 
 import Control.Monad (forM_, (<=<))
-import Data.Set (Set)
-import Data.Set qualified as Set
+import Data.Map (Map)
+import Data.Map.Lazy qualified as Map
 import Data.Text (Text)
 import Hooky.Config (Config (..), RepoConfig (..))
 import Hooky.Config qualified as LintRule (LintRule (..))
@@ -34,7 +34,7 @@ import System.Directory (
   removeFile,
  )
 import System.FilePath ((</>))
-import System.OsPath (osp)
+import System.OsPath (OsPath, osp)
 import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
@@ -383,8 +383,12 @@ defaultOptions =
     , files = mempty
     }
 
-gitFiles :: [FilePath] -> Set GitFile
-gitFiles = Set.fromList . map (GitFile . OsPath.fromFilePath)
+gitFiles :: [FilePath] -> Map OsPath GitFile
+gitFiles paths =
+  Map.fromList
+    [ (path, GitFile path)
+    | path <- map OsPath.fromFilePath paths
+    ]
 
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =

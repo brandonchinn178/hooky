@@ -31,7 +31,6 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid qualified as Monoid
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -56,7 +55,7 @@ import UnliftIO.Exception (evaluateDeep, tryJust)
 
 data LintOptions = LintOptions
   { autofix :: Bool
-  , files :: Set GitFile
+  , files :: Map OsPath GitFile
   }
 
 {----- runLintRules -----}
@@ -73,7 +72,7 @@ runLintRules git config options = do
   fileLintResults <-
     mapM (runPerFileLintRules git options allLinters) $
       [ file
-      | GitFile.GitFile file <- Set.toList options.files
+      | GitFile.GitFile file <- Map.elems options.files
       ]
   let report =
         Map.unionsWith (<>) $
@@ -103,11 +102,11 @@ runAllFilesLintRules git allLinters = do
   files <- resolveGitFiles git GitFile.FilesAll
   fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
     Logging.debug $ "Running linter: " <> rule.name
-    results <- run git $ Set.filter (isIncluded rule) files
+    results <- run git $ Map.filterWithKey (isIncluded rule) files
     pure [(Just fp, NonEmpty.singleton (rule.name, result)) | (fp, result) <- results]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
-  isIncluded rule file = matchesGlobs rule.fileGlobs (OsPath.toText file.path)
+  isIncluded rule path _ = matchesGlobs rule.fileGlobs (OsPath.toText path)
 
 runPerFileLintRules ::
   GitClient ->
@@ -225,7 +224,7 @@ getSuccessfulHooks report =
 
 data LintAction
   = LintActionNoFile (GitClient -> IO LintResult)
-  | LintActionAllFiles (GitClient -> Set GitFile -> IO [(OsPath, LintResult)])
+  | LintActionAllFiles (GitClient -> Map OsPath GitFile -> IO [(OsPath, LintResult)])
   | LintActionPerFile (GitClient -> OsPath -> Text -> IO (LintResult, Text))
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
@@ -251,11 +250,11 @@ fromLintRule LintRule{rule} =
 
 lint_CheckBrokenSymlinks :: LintAction
 lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
-  let filePaths = Set.map (.path) files
+  let filePaths = Map.keysSet files
       dirPaths = Set.map OsPath.takeDirectory filePaths
   pure
     [ (link.path, failure)
-    | GitFile.GitFile_Symlink link <- Set.toList files
+    | GitFile.GitFile_Symlink link <- Map.elems files
     , link.target `Set.notMember` (if link.isDir then dirPaths else filePaths)
     ]
  where
@@ -263,11 +262,10 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
-  let allFiles = [file.path | file <- Set.toList files]
-      collisionMap =
+  let collisionMap =
         Map.fromListWith (<>) $
           [ (Text.toLower (OsPath.toText fp), [fp])
-          | fp <- allFiles
+          | fp <- Map.keys files
           ]
   pure
     [ (fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " (map OsPath.toText rest))

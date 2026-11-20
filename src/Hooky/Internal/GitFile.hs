@@ -20,9 +20,9 @@ module Hooky.Internal.GitFile (
 
 import Control.Applicative ((<|>))
 import Control.Monad (guard, (<=<))
-import Data.Function (on)
+import Data.Map.Lazy (Map)
+import Data.Map.Lazy qualified as Map
 import Data.Maybe (catMaybes, mapMaybe)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -82,7 +82,7 @@ parseGitFileTargetArg = \case
 data GitFile
   = GitFile OsPath
   | GitFile_Symlink GitFileSymlink
-  deriving (Show, Eq, Ord)
+  deriving (Show)
 
 instance HasField "path" GitFile OsPath where
   getField = \case
@@ -99,10 +99,6 @@ data GitFileSymlink = GitFileSymlink
 
 instance Show GitFileSymlink where
   show link = "mkGitFileSymlink " <> show link.path
-instance Eq GitFileSymlink where
-  (==) = (==) `on` (.path)
-instance Ord GitFileSymlink where
-  compare = compare `on` (.path)
 
 mkGitFileSymlink :: OsPath -> IO GitFileSymlink
 mkGitFileSymlink path = do
@@ -121,7 +117,8 @@ mkGitFileSymlink path = do
         cwd <- getCurrentDirectory
         makeRelative cwd <$> canonicalizePath (cwd </> fp)
 
-resolveGitFiles :: GitClient -> GitFileTarget -> IO (Set GitFile)
+-- | Resolve git information for files specified by the given 'GitFileTarget'.
+resolveGitFiles :: GitClient -> GitFileTarget -> IO (Map OsPath GitFile)
 resolveGitFiles git = \case
   FilesGiven files -> resolve files
   FilesModified -> getChangedFiles []
@@ -157,7 +154,7 @@ resolveGitFiles git = \case
                 Just (path, rest')
           Just ((newMode, OsPath.fromText path), rest')
 
-    fmap Set.fromList . mapMaybeM toGitFile . parseOutput $ out
+    toGitFileMap . parseOutput $ out
 
   getTrackedFiles paths = do
     let stdin =
@@ -186,7 +183,7 @@ resolveGitFiles git = \case
           guard $ path `Set.notMember` deletedFiles
           Just file
 
-    fmap Set.fromList . mapMaybeM toGitFile . mapMaybe (notDeleted <=< parseLine) $ lines
+    toGitFileMap . mapMaybe (notDeleted <=< parseLine) $ lines
 
   resolve fileArgs = do
     files <-
@@ -197,16 +194,16 @@ resolveGitFiles git = \case
     trackedFiles <- getTrackedFiles files
     untrackedFiles <-
       mconcatMapM loadUntrackedFile . Set.toList $
-        Set.fromList files Set.\\ Set.map (.path) trackedFiles
+        Set.fromList files Set.\\ Map.keysSet trackedFiles
 
     pure $ trackedFiles <> untrackedFiles
 
   loadUntrackedFile path =
     maybe (abort $ "File does not exist: " <> OsPath.toText path) pure <=< ifM $
       [ (,) (pathIsSymbolicLink path `catchAny` \_ -> pure False) $ do
-          Set.singleton . GitFile_Symlink <$> mkGitFileSymlink path
+          Map.singleton path . GitFile_Symlink <$> mkGitFileSymlink path
       , (,) (doesFileExist path) $ do
-          pure . Set.singleton $ GitFile path
+          pure . Map.singleton path $ GitFile path
       , (,) (doesDirectoryExist path) $ do
           -- All tracked files were already captured by `getTrackedFiles`, so we
           -- only need to find untracked, non-ignored files in this directory
@@ -214,6 +211,7 @@ resolveGitFiles git = \case
             >>= mconcatMapM (loadUntrackedFile . OsPath.fromText)
       ]
 
+  toGitFileMap = fmap (Map.fromList . map (\file -> (file.path, file))) . mapMaybeM toGitFile
   toGitFile (mode, path) =
     case mode of
       "100644" -> pure . Just $ GitFile path
