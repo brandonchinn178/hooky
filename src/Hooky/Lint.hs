@@ -50,7 +50,6 @@ import Hooky.Utils.OsPath qualified as OsPath
 import System.File.OsPath qualified as OsPath
 import System.IO.Error (isDoesNotExistError)
 import System.OsPath (OsPath)
-import System.OsPath qualified as OsPath
 import UnliftIO.Exception (evaluateDeep, tryJust)
 
 data LintOptions = LintOptions
@@ -251,7 +250,7 @@ fromLintRule LintRule{rule} =
 lint_CheckBrokenSymlinks :: LintAction
 lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
   let filePaths = Map.keysSet files
-      dirPaths = Set.map OsPath.takeDirectory filePaths
+      dirPaths = foldMap (Set.fromList . OsPath.parents) filePaths
   pure
     [ (link.path, failure)
     | GitFile.GitFile_Symlink link <- Map.elems files

@@ -1,9 +1,13 @@
 module Hooky.Utils.OsPath (
+  -- * Conversions
   fromFilePath,
   toFilePath,
   fromText,
   toText,
   toLazyText,
+
+  -- * Pure
+  parents,
 
   -- * IO
   listDirectoryRecur,
@@ -58,6 +62,14 @@ toText =
 
 toLazyText :: OsPath -> LazyText
 toLazyText = LazyText.fromStrict . toText
+
+parents :: OsPath -> [OsPath]
+parents = untilFixed . iterate OsPath.takeDirectory
+ where
+  untilFixed :: (Eq a) => [a] -> [a]
+  untilFixed = \case
+    [] -> []
+    x0 : xs -> x0 : (map snd . takeWhile (\(prev, x) -> prev /= x) $ zip (x0 : xs) xs)
 
 listDirectoryRecur :: OsPath -> IO [OsPath]
 listDirectoryRecur dir = do
