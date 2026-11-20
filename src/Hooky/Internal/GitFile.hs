@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
@@ -25,11 +26,14 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.Encoding qualified as LazyText
 import GHC.Records (HasField (..))
 import Hooky.Error (abort)
 import Hooky.Internal.Logging qualified as Logging
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.OsPath qualified as OsPath
+import Hooky.Utils.Process qualified as Process
 import Hooky.Utils.Text qualified as Text
 import System.Directory.OsPath (
   canonicalizePath,
@@ -41,8 +45,8 @@ import System.Directory.OsPath (
  )
 import System.File.OsPath qualified as OsPath
 import System.IO.Unsafe (unsafeInterleaveIO)
-import System.OsPath (OsPath, isAbsolute, makeRelative, takeDirectory, (</>))
-import UnliftIO.Exception (catchAny)
+import System.OsPath (OsPath, isAbsolute, makeRelative, osp, takeDirectory, (</>))
+import UnliftIO.Exception (catchAny, fromEitherM)
 import Prelude hiding (lines)
 
 -- | The ways a user might be able to specify the files to run on.
@@ -154,8 +158,18 @@ resolveGitFiles git = \case
 
     fmap Set.fromList . mapMaybeM toGitFile . parseOutput $ out
 
-  getTrackedFiles args = do
-    lines <- Text.splitNULs <$> git.query (["ls-files", "--stage", "-z"] <> args)
+  getTrackedFiles paths = do
+    let stdin =
+          LazyText.encodeUtf8
+            . LazyText.intercalate "\NUL"
+            . map OsPath.toLazyText
+            $ paths
+        proc =
+          Process.setStdin stdin
+            . Process.wrap [osp|xargs|] [[osp|-0|]]
+            $ git.proc ["ls-files", "--stage", "-z"]
+    stdout <- fromEitherM . Process.run . Process.getOutput $ proc
+    let lines = Text.splitNULs . Text.strip $ stdout
     deletedFiles <- Set.fromList . map OsPath.fromText <$> git.getLinesFrom ["ls-files", "--deleted"]
 
     -- ls-files --stage should output lines in the following format:
@@ -179,7 +193,7 @@ resolveGitFiles git = \case
         FileArg file -> pure [file]
         FileArgsFrom path -> map OsPath.fromText . Text.lines . Text.decodeUtf8 <$> OsPath.readFile' path
 
-    trackedFiles <- getTrackedFiles $ "--" : map OsPath.toFilePath files
+    trackedFiles <- getTrackedFiles files
     untrackedFiles <-
       mconcatMapM loadUntrackedFile . Set.toList $
         Set.fromList files Set.\\ Set.map (.path) trackedFiles

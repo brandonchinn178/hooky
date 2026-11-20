@@ -80,10 +80,11 @@ executable hooky
     -Wall -Wcompat
     -- https://github.com/commercialhaskell/stack/issues/3918
     -optP-Wno-nonportable-include-path
+    -threaded
 
 test-suite hooky-tests
   type: exitcode-stdio-1.0
-  ghc-options: -F -pgmF=skeletest-preprocessor
+  ghc-options: -F -pgmF=skeletest-preprocessor -threaded
   build-tool-depends:
     , skeletest:skeletest-preprocessor
     , hooky:hooky

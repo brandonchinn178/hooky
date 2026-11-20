@@ -14,8 +14,10 @@ import Data.Text qualified as Text
 import GHC.Records (HasField (..))
 import Hooky.Error (HookyError (..))
 import Hooky.Utils.OsPath qualified as OsPath
-import Hooky.Utils.Process (runProcessWith)
+import Hooky.Utils.Process (Process)
+import Hooky.Utils.Process qualified as Process
 import Hooky.Utils.Text qualified as Text
+import System.Exit (ExitCode)
 import System.OsPath (OsPath, osp)
 import UnliftIO.Exception (fromEitherM)
 
@@ -36,8 +38,14 @@ initGitClient = do
       { repo = OsPath.fromText repo
       }
 
+instance HasField "proc" GitClient ([String] -> Process ExitCode) where
+  getField git args =
+    Process.new [osp|git|] . concat $
+      [ [[osp|-C|], git.repo]
+      , map OsPath.fromFilePath args
+      ]
 instance HasField "run" GitClient ([String] -> IO (Either HookyError Text)) where
-  getField git args = runProcessWith id "git" $ ["-C", OsPath.toFilePath git.repo] <> args
+  getField git args = Process.run . Process.getOutput $ git.proc args
 instance HasField "exec" GitClient ([String] -> IO ()) where
   getField git args = void . fromEitherM $ git.run args
 instance HasField "query" GitClient ([String] -> IO Text) where

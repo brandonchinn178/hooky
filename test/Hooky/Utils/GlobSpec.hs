@@ -98,6 +98,8 @@ globSpec = do
     genRelPathLike $
       fmap Text.concat . Gen.list (Range.linear 1 5) $
         Gen.frequency
-          [ (9, Gen.text (Range.linear 1 5) Gen.unicode)
+          [ (9, Gen.text (Range.linear 1 5) genChar)
           , (1, pure "*")
           ]
+
+  genChar = Gen.filter (/= '!') Gen.unicode
