@@ -9,6 +9,7 @@ module Hooky.Utils.Process (
   StreamOut (..),
   new,
   run,
+  wrap,
   setStdin,
   setStderr,
   getOutput,
@@ -83,6 +84,13 @@ run proc = do
         IO.hClose stdin_w
         proc.callback h stdout_r stderr_r
     )
+
+wrap :: OsString -> [OsString] -> Process a -> Process a
+wrap cmd args proc =
+  proc
+    { cmd
+    , args = args <> (proc.cmd : proc.args)
+    }
 
 setStdin :: LazyByteString -> Process a -> Process a
 setStdin bs proc = proc{populateStdin = \h -> LazyByteString.hPutStr h bs}
