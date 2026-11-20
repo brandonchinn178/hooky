@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Internal.GitFile (
@@ -79,8 +80,8 @@ parseGitFileTargetArg = \case
 -- We filter out git submodules entirely. It's up to the hook command / each
 -- `hooky lint` rule to handle symlinks appropriately.
 data GitFile
-  = GitFile !OsPath
-  | GitFile_Symlink !GitFileSymlink
+  = GitFile OsPath
+  | GitFile_Symlink GitFileSymlink
   deriving (Show, Eq, Ord)
 
 instance HasField "path" GitFile OsPath where
@@ -89,10 +90,10 @@ instance HasField "path" GitFile OsPath where
     GitFile_Symlink link -> link.path
 
 data GitFileSymlink = GitFileSymlink
-  { path :: !OsPath
-  , isDir :: Bool
+  { path :: OsPath
+  , isDir :: ~Bool
   -- ^ Lazily fetched on first use
-  , target :: OsPath
+  , target :: ~OsPath
   -- ^ Lazily fetched on first use
   }
 
