@@ -21,6 +21,7 @@ import System.Directory (
   renameFile,
  )
 import System.Exit (ExitCode (..))
+import System.FilePath ((</>))
 import System.IO qualified as IO
 import System.Process qualified as Process
 
@@ -281,6 +282,33 @@ spec = do
           writeFile "test.txt" "test"
           git.exec ["add", "."]
           runHookyWithEnv "SKIP=end_of_file_fixer" ["run", "--all"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+
+  describe "hooky lint" $ do
+    it "works on large repos using pass_files=file" $ do
+      withGitRepo $ \_ -> do
+        writeFile ".hooky.kdl" $
+          """
+          hook hooky {
+            command hooky lint {
+              pass_files file
+            }
+            files *
+          }
+          lint_rules {
+            - end_of_file_fixer
+          }
+
+          """
+        -- 10,000 files, each with 200 character paths
+        -- should trigger "posix_spawnp: resource exhausted (Argument list too long)"
+        forM_ [1 .. 100 :: Int] $ \x -> do
+          let dir = Text.unpack $ Text.replicate 100 "a" <> Text.show x
+          createDirectory dir
+          forM_ [1 .. 100 :: Int] $ \y -> do
+            let file = Text.unpack $ Text.replicate 100 "b" <> Text.show y
+            writeFile (dir </> file) ""
+        (code, _, _) <- readHooky ["run", ".", "--format=verbose"]
+        code `shouldBe` ExitSuccess
 
 runHooky :: [String] -> IO ExitCode
 runHooky args = do
