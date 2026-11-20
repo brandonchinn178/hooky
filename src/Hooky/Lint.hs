@@ -30,7 +30,6 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
-import Data.Monoid qualified as Monoid
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -99,10 +98,17 @@ runAllFilesLintRules ::
   IO (Map (Maybe OsPath) (NonEmpty (Text, LintResult)))
 runAllFilesLintRules git allLinters = do
   files <- resolveGitFiles git GitFile.FilesAll
-  fmap (Map.fromListWith (<>) . concat) . forM linters $ \(rule, run) -> do
+  fmap (Map.unionsWith (<>)) . forM linters $ \(rule, run) -> do
     Logging.debug $ "Running linter: " <> rule.name
-    results <- run git $ Map.filterWithKey (isIncluded rule) files
-    pure [(Just fp, NonEmpty.singleton (rule.name, result)) | (fp, result) <- results]
+    failures <- run git $ Map.filterWithKey (isIncluded rule) files
+    let results =
+          if null failures
+            then [(Nothing, LintSuccess)]
+            else [(Just fp, LintFailed msg) | (fp, msg) <- failures]
+    pure . Map.fromList $
+      [ (fp, NonEmpty.singleton (rule.name, result))
+      | (fp, result) <- results
+      ]
  where
   linters = [(rule, run) | (rule, LintActionAllFiles run) <- allLinters]
   isIncluded rule path _ = matchesGlobs rule.fileGlobs (OsPath.toText path)
@@ -211,11 +217,11 @@ getSuccessfulHooks report =
   -- Map (Maybe OsPath) [(Text, LintResult)]
   --   => [(Text, LintResult)]
   --   => [(Text, isSuccess)]
-  --   => Map Text (All isSuccess)
+  --   => Map Text isSuccess
   Map.keys
-    . Map.filter Monoid.getAll
+    . Map.filter and
     . Map.fromListWith (<>)
-    . map (fmap (Monoid.All . (== LintSuccess)))
+    . map (\(hook, result) -> (hook, [result == LintSuccess]))
     . (concat . Map.elems . Map.map NonEmpty.toList)
     $ report.unwrap
 
@@ -223,7 +229,7 @@ getSuccessfulHooks report =
 
 data LintAction
   = LintActionNoFile (GitClient -> IO LintResult)
-  | LintActionAllFiles (GitClient -> Map OsPath GitFile -> IO [(OsPath, LintResult)])
+  | LintActionAllFiles (GitClient -> Map OsPath GitFile -> IO [(OsPath, Text)])
   | LintActionPerFile (GitClient -> OsPath -> Text -> IO (LintResult, Text))
 
 data LintResult = LintSuccess | LintFixed | LintFailed Text
@@ -257,7 +263,7 @@ lint_CheckBrokenSymlinks = LintActionAllFiles $ \_ files -> do
     , link.target `Set.notMember` (if link.isDir then dirPaths else filePaths)
     ]
  where
-  failure = LintFailed "File is a broken symlink. Remove or exclude from rule"
+  failure = "File is a broken symlink. Remove or exclude from rule"
 
 lint_CheckCaseConflict :: LintAction
 lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
@@ -267,7 +273,7 @@ lint_CheckCaseConflict = LintActionAllFiles $ \_ files -> do
           | fp <- Map.keys files
           ]
   pure
-    [ (fp, LintFailed $ "File conflicts with: " <> Text.intercalate ", " (map OsPath.toText rest))
+    [ (fp, "File conflicts with: " <> Text.intercalate ", " (map OsPath.toText rest))
     | fp : rest@(_ : _) <- Map.elems collisionMap
     ]
 
