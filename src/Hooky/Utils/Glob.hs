@@ -67,7 +67,11 @@ matchesGlob :: Glob -> Text -> Bool
 matchesGlob glob s = invert $ any matches glob.patterns
  where
   invert = if glob.invert then not else id
-  matches = flip Glob.match (Text.unpack s)
+  matches = flip (Glob.matchWith matchOpts) (Text.unpack s)
+  matchOpts =
+    Glob.matchPosix
+      { Glob.matchDotsImplicitly = True
+      }
 
 matchesGlobs :: [Glob] -> Text -> Bool
 matchesGlobs globs s =

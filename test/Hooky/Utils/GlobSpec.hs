@@ -67,6 +67,10 @@ globSpec = do
       "!{foo,bar}.{hs,txt}" `matches` "bar.txt" ==> False
       "!{foo,bar}.{hs,txt}" `matches` "baz.txt" ==> True
 
+      -- Hidden files/directories
+      "*" `matches` ".gitignore" ==> True
+      "**/*" `matches` ".foo/test" ==> True
+
       prop "'<path>' and '**/<path>' are equivalent" $ do
         Prop.setTestLimit 10000
         g <- forAll genRelGlob
