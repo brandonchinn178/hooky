@@ -164,11 +164,11 @@ resolveGitFiles git = \case
             . LazyText.intercalate "\NUL"
             . map OsPath.toLazyText
             $ paths
-        proc =
-          Process.setStdin stdin
-            . Process.wrap [osp|xargs|] [[osp|-0|]]
-            $ git.proc ["ls-files", "--stage", "-z"]
-    stdout <- fromEitherM . Process.run . Process.getOutput $ proc
+        withXargs = Process.setStdin stdin . Process.wrap [osp|xargs|] [[osp|-0|]]
+    stdout <-
+      fromEitherM . Process.run . Process.getOutput $
+        (if null paths then id else withXargs) $
+          git.proc ["ls-files", "--stage", "-z"]
     let lines = Text.splitNULs . Text.strip $ stdout
     deletedFiles <- Set.fromList . map OsPath.fromText <$> git.getLinesFrom ["ls-files", "--deleted"]
 
