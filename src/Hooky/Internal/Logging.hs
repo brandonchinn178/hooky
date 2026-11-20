@@ -27,6 +27,7 @@ import Data.Text (Text)
 import Data.Text.Lazy qualified as TextL
 import Data.Text.Lazy.IO qualified as TextL
 import Hooky.Utils.Term qualified as Term
+import System.IO (stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Prelude hiding (error)
 
@@ -67,7 +68,7 @@ sendLog :: LogLevel -> Text -> IO ()
 sendLog level msg = do
   logger <- readIORef loggerRef
   when (level >= logger.level) $ do
-    TextL.putStrLn . levelColor level . TextL.fromStrict $ showLevel level <> msg
+    TextL.hPutStrLn stderr . levelColor level . TextL.fromStrict $ showLevel level <> msg
  where
   showLevel = \case
     LogLevel_Debug -> "[debug] "
