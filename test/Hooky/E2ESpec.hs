@@ -291,23 +291,11 @@ runHooky args = do
 readHooky :: [String] -> IO (ExitCode, Text, Text)
 readHooky args = do
   HookyExe hooky <- getFixture
-  (stdout_r, stdout_w) <- Process.createPipe
-  (stderr_r, stderr_w) <- Process.createPipe
-  IO.hSetEncoding stdout_r IO.utf8
-  IO.hSetEncoding stderr_r IO.utf8
-  let proc =
-        (Process.proc hooky args)
-          { Process.std_out = Process.UseHandle stdout_w
-          , Process.std_err = Process.UseHandle stderr_w
-          , Process.close_fds = True
-          }
-  Process.withCreateProcess proc $ \_ _ _ h -> do
-    code <- Process.waitForProcess h
-    stdout <- Text.hGetContents stdout_r
-    stderr <- Text.hGetContents stderr_r
-    Text.hPutStrLn IO.stdout stdout
-    Text.hPutStrLn IO.stderr stderr
-    pure (code, stripControlChars stdout, stripControlChars stderr)
+  (code, stdoutS, stderrS) <- Process.readProcessWithExitCode hooky args ""
+  let (stdout, stderr) = (Text.pack stdoutS, Text.pack stderrS)
+  Text.hPutStrLn IO.stdout stdout
+  Text.hPutStrLn IO.stderr stderr
+  pure (code, stripControlChars stdout, stripControlChars stderr)
  where
   stripControlChars s =
     case Text.breakOn "\x1b" s of

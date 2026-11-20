@@ -80,6 +80,7 @@ executable hooky
     -Wall -Wcompat
     -- https://github.com/commercialhaskell/stack/issues/3918
     -optP-Wno-nonportable-include-path
+    -threaded
 
 test-suite hooky-tests
   type: exitcode-stdio-1.0

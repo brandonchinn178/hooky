@@ -11,6 +11,7 @@ module Hooky.Run (
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_, unless, when)
+import Data.ByteString.Lazy qualified as LazyByteString
 import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
@@ -51,7 +52,8 @@ import Hooky.Internal.Temp (hookyTmpDir)
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (matchesGlobs)
 import Hooky.Utils.OsPath qualified as OsPath
-import Hooky.Utils.Process (renderShell, runStreamedProcess)
+import Hooky.Utils.Process (renderShell)
+import Hooky.Utils.Process qualified as Process
 import Hooky.Utils.Term qualified as Term
 import System.Console.Regions (
   ConsoleRegion,
@@ -273,8 +275,8 @@ runHook checkDiffs hookOutput hook = do
       code <-
         case hook.passFiles of
           PassFiles_None -> run hook.args
-          PassFiles_XArgs -> runXargs hook.args
-          PassFiles_XArgsParallel -> runXargs $ "-P0" NonEmpty.<| hook.args
+          PassFiles_XArgs -> runXargs [] hook.args
+          PassFiles_XArgsParallel -> runXargs ["-P0"] hook.args
           PassFiles_File ->
             withSystemTempFile ("hooky." <> Text.unpack hook.name <> ".XXXXX") $ \fp h -> do
               forM_ hook.files $ \file -> Text.hPutStrLn h $ OsPath.toText file.path
@@ -286,23 +288,30 @@ runHook checkDiffs hookOutput hook = do
           ExitFailure _ -> HookFailed
  where
   run (cmd NonEmpty.:| args) =
-    runProc cmd args $ \_ -> pure ()
-  runXargs args =
-    runProc "xargs" (["-0"] <> NonEmpty.toList args) $ \h ->
-      forM_ hook.files $ \file -> Text.hPutStr h $ OsPath.toText file.path <> "\NUL"
-  runProc cmd args populateStdin =
-    runStreamedProcess cmd args hookOutput.onLine populateStdin `catchAny` \e -> do
-      -- See if it failed due to executable not being found
-      let hookCmd = NonEmpty.head hook.args
-      findExecutable (Text.unpack hookCmd) >>= \case
-        Just _ -> pure ()
-        Nothing -> abort $ "Executable does not exist: " <> hookCmd
+    runProc cmd args ""
+  runXargs xargsArgs cmdArgs =
+    runProc "xargs" (["-0"] <> xargsArgs <> NonEmpty.toList cmdArgs) $
+      LazyByteString.fromStrict . Text.encodeUtf8 $
+        Text.concat [OsPath.toText file.path <> "\NUL" | file <- Set.toList hook.files]
+  runProc cmd args stdin =
+    (`catchAny` onProcError)
+      $ Process.run
+        . Process.streamOutput hookOutput.onLine
+        . Process.setStderr Process.StreamStdout
+        . Process.setStdin stdin
+      $ Process.new (OsPath.fromText cmd) (map OsPath.fromText args)
+  onProcError e = do
+    -- See if it failed due to executable not being found
+    let hookCmd = NonEmpty.head hook.args
+    findExecutable (Text.unpack hookCmd) >>= \case
+      Just _ -> pure ()
+      Nothing -> abort $ "Executable does not exist: " <> hookCmd
 
-      -- If the exception is unrecognized, just dump it to output
-      abort . Text.unlines $
-        [ "Failed to execute command: " <> renderShell (NonEmpty.toList hook.args)
-        , Text.pack $ displayException e
-        ]
+    -- If the exception is unrecognized, just dump it to output
+    abort . Text.unlines $
+      [ "Failed to execute command: " <> renderShell (NonEmpty.toList hook.args)
+      , Text.pack $ displayException e
+      ]
 
 {----- HookResult -----}
 
