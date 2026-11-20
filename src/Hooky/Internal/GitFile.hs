@@ -123,7 +123,7 @@ resolveGitFiles git = \case
   FilesGiven files -> resolve files
   FilesModified -> getChangedFiles []
   FilesStaged -> getChangedFiles ["--staged"]
-  FilesAll -> getTrackedFiles []
+  FilesAll -> getTrackedFiles Nothing
   FilesPrev -> getChangedFiles ["HEAD~1..HEAD"]
  where
   getChangedFiles args = do
@@ -156,16 +156,21 @@ resolveGitFiles git = \case
 
     toGitFileMap . parseOutput $ out
 
-  getTrackedFiles paths = do
-    let stdin =
-          LazyText.encodeUtf8
-            . LazyText.intercalate "\NUL"
-            . map OsPath.toLazyText
-            $ paths
-        withXargs = Process.setStdin stdin . Process.wrap [osp|xargs|] [[osp|-0|]]
+  getTrackedFiles mPaths = do
+    -- Passing a large number of files to `git ls-files` is really slow,
+    -- so we'll do the following:
+    --   1. If < 100 files, pass files to git in one call
+    --   2. Otherwise, load all files from git and filter in-memory
+    let (modifyProc, postFilter) =
+          case mPaths of
+            Nothing -> (id, id)
+            Just paths
+              | length paths < 100 -> (withXArgs paths, id)
+              | otherwise -> (id, flip Map.restrictKeys (Set.fromList paths))
+
     stdout <-
       fromEitherM . Process.run . Process.getOutput $
-        (if null paths then id else withXargs) $
+        modifyProc $
           git.proc ["ls-files", "--stage", "-z"]
     let lines = Text.splitNULs . Text.strip $ stdout
     deletedFiles <- Set.fromList . map OsPath.fromText <$> git.getLinesFrom ["ls-files", "--deleted"]
@@ -183,7 +188,7 @@ resolveGitFiles git = \case
           guard $ path `Set.notMember` deletedFiles
           Just file
 
-    toGitFileMap . mapMaybe (notDeleted <=< parseLine) $ lines
+    fmap postFilter . toGitFileMap . mapMaybe (notDeleted <=< parseLine) $ lines
 
   resolve fileArgs = do
     files <-
@@ -191,7 +196,7 @@ resolveGitFiles git = \case
         FileArg file -> pure [file]
         FileArgsFrom path -> map OsPath.fromText . Text.lines . Text.decodeUtf8 <$> OsPath.readFile' path
 
-    trackedFiles <- getTrackedFiles files
+    trackedFiles <- getTrackedFiles (Just files)
     untrackedFiles <-
       mconcatMapM loadUntrackedFile . Set.toList $
         Set.fromList files Set.\\ Map.keysSet trackedFiles
@@ -220,6 +225,15 @@ resolveGitFiles git = \case
       "160000" -> pure Nothing
       "000000" -> pure Nothing -- deleted
       _ -> Logging.traceWarn ("Unexpected mode: " <> mode) $ pure Nothing
+
+  withXArgs args =
+    Process.setStdin (joinNULs args)
+      . Process.wrap [osp|xargs|] [[osp|-0|]]
+   where
+    joinNULs =
+      LazyText.encodeUtf8
+        . LazyText.intercalate "\NUL"
+        . map OsPath.toLazyText
 
 {----- Combinators -----}
 
