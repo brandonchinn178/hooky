@@ -4,7 +4,7 @@
 
 module Hooky.E2ESpec (spec) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, (<=<))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -24,6 +24,7 @@ import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
 import System.IO qualified as IO
 import System.Process qualified as Process
+import System.Timeout (timeout)
 
 spec :: Spec
 spec = do
@@ -285,7 +286,7 @@ spec = do
 
   describe "hooky lint" $ do
     it "works on large repos using pass_files=file" $ do
-      withGitRepo $ \_ -> do
+      withGitRepo $ \git -> do
         writeFile ".hooky.kdl" $
           """
           hook hooky {
@@ -307,8 +308,12 @@ spec = do
           forM_ [1 .. 100 :: Int] $ \y -> do
             let file = Text.unpack $ Text.replicate 100 "b" <> Text.show y
             writeFile (dir </> file) ""
-        (code, _, _) <- readHooky ["run", ".", "--format=verbose"]
-        code `shouldBe` ExitSuccess
+        git.exec ["add", "."]
+        git.exec ["commit", "-m", "test", "-q"]
+
+        maybe (failTest "Timed out") pure <=< timeout 1_500_000 $ do
+          (code, _, _) <- readHooky ["run", "-a", "--format=verbose"]
+          code `shouldBe` ExitSuccess
 
 runHooky :: [String] -> IO ExitCode
 runHooky args = do

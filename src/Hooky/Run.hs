@@ -16,6 +16,8 @@ import Data.Foldable qualified as Seq (toList)
 import Data.IORef (atomicModifyIORef, newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Lazy (Map)
+import Data.Map.Lazy qualified as Map
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -68,7 +70,7 @@ import System.Directory (findExecutable)
 import System.Exit (ExitCode (..), exitFailure)
 import System.File.OsPath qualified as OsPath
 import System.IO qualified as IO
-import System.OsPath ((</>))
+import System.OsPath (OsPath, (</>))
 import System.Process (getCurrentPid)
 import UnliftIO.Async (pooledMapConcurrentlyN, withAsync)
 import UnliftIO.Exception (
@@ -244,12 +246,12 @@ data HookCmd = HookCmd
   { name :: Text
   , args :: NonEmpty Text
   , passFiles :: PassFilesMode
-  , files :: Set GitFile
+  , files :: Map OsPath GitFile
   , isSkip :: Bool
   }
-  deriving (Show, Eq)
+  deriving (Show)
 
-resolveHook :: Config -> RunOptions -> Set GitFile -> HookConfig -> HookCmd
+resolveHook :: Config -> RunOptions -> Map OsPath GitFile -> HookConfig -> HookCmd
 resolveHook config options files hookConfig =
   HookCmd
     { name = hookConfig.name
@@ -258,14 +260,14 @@ resolveHook config options files hookConfig =
           then hookConfig.cmdArgs `NonEmpty.appendList` hookConfig.fixArgs
           else hookConfig.cmdArgs `NonEmpty.appendList` hookConfig.checkArgs
     , passFiles = hookConfig.passFiles
-    , files = Set.filter isIncluded files
+    , files = Map.filterWithKey isIncluded files
     , isSkip = hookConfig.name `Set.member` config.skippedHooks
     }
  where
-  isIncluded file =
+  isIncluded path _ =
     matchesGlobs
       (config.repo.fileGlobs <> hookConfig.fileGlobs)
-      (OsPath.toText file.path)
+      (OsPath.toText path)
 
 runHook :: DiffChecker -> HookOutput -> HookCmd -> IO HookResult
 runHook checkDiffs hookOutput hook = do
@@ -292,7 +294,7 @@ runHook checkDiffs hookOutput hook = do
   runXargs xargsArgs cmdArgs =
     runProc "xargs" (["-0"] <> xargsArgs <> NonEmpty.toList cmdArgs) $
       LazyByteString.fromStrict . Text.encodeUtf8 $
-        Text.concat [OsPath.toText file.path <> "\NUL" | file <- Set.toList hook.files]
+        Text.concat [OsPath.toText path <> "\NUL" | path <- Map.keys hook.files]
   runProc cmd args stdin =
     (`catchAny` onProcError)
       $ Process.run
@@ -402,5 +404,5 @@ initDiffChecker git mode = \hookOutput action -> do
       pure HookFailed
     Mode_FixAdd -> do
       modifiedFiles <- resolveGitFiles git FilesModified
-      git.exec $ "add" : [OsPath.toFilePath file.path | file <- Set.toList modifiedFiles]
+      git.exec $ "add" : [OsPath.toFilePath path | path <- Map.keys modifiedFiles]
       pure result

@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Hooky.Internal.GitFile (
@@ -19,9 +20,9 @@ module Hooky.Internal.GitFile (
 
 import Control.Applicative ((<|>))
 import Control.Monad (guard, (<=<))
-import Data.Function (on)
+import Data.Map.Lazy (Map)
+import Data.Map.Lazy qualified as Map
 import Data.Maybe (catMaybes, mapMaybe)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -79,9 +80,9 @@ parseGitFileTargetArg = \case
 -- We filter out git submodules entirely. It's up to the hook command / each
 -- `hooky lint` rule to handle symlinks appropriately.
 data GitFile
-  = GitFile !OsPath
-  | GitFile_Symlink !GitFileSymlink
-  deriving (Show, Eq, Ord)
+  = GitFile OsPath
+  | GitFile_Symlink GitFileSymlink
+  deriving (Show)
 
 instance HasField "path" GitFile OsPath where
   getField = \case
@@ -89,19 +90,15 @@ instance HasField "path" GitFile OsPath where
     GitFile_Symlink link -> link.path
 
 data GitFileSymlink = GitFileSymlink
-  { path :: !OsPath
-  , isDir :: Bool
+  { path :: OsPath
+  , isDir :: ~Bool
   -- ^ Lazily fetched on first use
-  , target :: OsPath
+  , target :: ~OsPath
   -- ^ Lazily fetched on first use
   }
 
 instance Show GitFileSymlink where
   show link = "mkGitFileSymlink " <> show link.path
-instance Eq GitFileSymlink where
-  (==) = (==) `on` (.path)
-instance Ord GitFileSymlink where
-  compare = compare `on` (.path)
 
 mkGitFileSymlink :: OsPath -> IO GitFileSymlink
 mkGitFileSymlink path = do
@@ -120,12 +117,13 @@ mkGitFileSymlink path = do
         cwd <- getCurrentDirectory
         makeRelative cwd <$> canonicalizePath (cwd </> fp)
 
-resolveGitFiles :: GitClient -> GitFileTarget -> IO (Set GitFile)
+-- | Resolve git information for files specified by the given 'GitFileTarget'.
+resolveGitFiles :: GitClient -> GitFileTarget -> IO (Map OsPath GitFile)
 resolveGitFiles git = \case
   FilesGiven files -> resolve files
   FilesModified -> getChangedFiles []
   FilesStaged -> getChangedFiles ["--staged"]
-  FilesAll -> getTrackedFiles []
+  FilesAll -> getTrackedFiles Nothing
   FilesPrev -> getChangedFiles ["HEAD~1..HEAD"]
  where
   getChangedFiles args = do
@@ -156,19 +154,24 @@ resolveGitFiles git = \case
                 Just (path, rest')
           Just ((newMode, OsPath.fromText path), rest')
 
-    fmap Set.fromList . mapMaybeM toGitFile . parseOutput $ out
+    toGitFileMap . parseOutput $ out
 
-  getTrackedFiles paths = do
-    let stdin =
-          LazyText.encodeUtf8
-            . LazyText.intercalate "\NUL"
-            . map OsPath.toLazyText
-            $ paths
-        proc =
-          Process.setStdin stdin
-            . Process.wrap [osp|xargs|] [[osp|-0|]]
-            $ git.proc ["ls-files", "--stage", "-z"]
-    stdout <- fromEitherM . Process.run . Process.getOutput $ proc
+  getTrackedFiles mPaths = do
+    -- Passing a large number of files to `git ls-files` is really slow,
+    -- so we'll do the following:
+    --   1. If < 100 files, pass files to git in one call
+    --   2. Otherwise, load all files from git and filter in-memory
+    let (modifyProc, postFilter) =
+          case mPaths of
+            Nothing -> (id, id)
+            Just paths
+              | length paths < 100 -> (withXArgs paths, id)
+              | otherwise -> (id, flip Map.restrictKeys (Set.fromList paths))
+
+    stdout <-
+      fromEitherM . Process.run . Process.getOutput $
+        modifyProc $
+          git.proc ["ls-files", "--stage", "-z"]
     let lines = Text.splitNULs . Text.strip $ stdout
     deletedFiles <- Set.fromList . map OsPath.fromText <$> git.getLinesFrom ["ls-files", "--deleted"]
 
@@ -185,7 +188,7 @@ resolveGitFiles git = \case
           guard $ path `Set.notMember` deletedFiles
           Just file
 
-    fmap Set.fromList . mapMaybeM toGitFile . mapMaybe (notDeleted <=< parseLine) $ lines
+    fmap postFilter . toGitFileMap . mapMaybe (notDeleted <=< parseLine) $ lines
 
   resolve fileArgs = do
     files <-
@@ -193,19 +196,19 @@ resolveGitFiles git = \case
         FileArg file -> pure [file]
         FileArgsFrom path -> map OsPath.fromText . Text.lines . Text.decodeUtf8 <$> OsPath.readFile' path
 
-    trackedFiles <- getTrackedFiles files
+    trackedFiles <- getTrackedFiles (Just files)
     untrackedFiles <-
       mconcatMapM loadUntrackedFile . Set.toList $
-        Set.fromList files Set.\\ Set.map (.path) trackedFiles
+        Set.fromList files Set.\\ Map.keysSet trackedFiles
 
     pure $ trackedFiles <> untrackedFiles
 
   loadUntrackedFile path =
     maybe (abort $ "File does not exist: " <> OsPath.toText path) pure <=< ifM $
       [ (,) (pathIsSymbolicLink path `catchAny` \_ -> pure False) $ do
-          Set.singleton . GitFile_Symlink <$> mkGitFileSymlink path
+          Map.singleton path . GitFile_Symlink <$> mkGitFileSymlink path
       , (,) (doesFileExist path) $ do
-          pure . Set.singleton $ GitFile path
+          pure . Map.singleton path $ GitFile path
       , (,) (doesDirectoryExist path) $ do
           -- All tracked files were already captured by `getTrackedFiles`, so we
           -- only need to find untracked, non-ignored files in this directory
@@ -213,6 +216,7 @@ resolveGitFiles git = \case
             >>= mconcatMapM (loadUntrackedFile . OsPath.fromText)
       ]
 
+  toGitFileMap = fmap (Map.fromList . map (\file -> (file.path, file))) . mapMaybeM toGitFile
   toGitFile (mode, path) =
     case mode of
       "100644" -> pure . Just $ GitFile path
@@ -221,6 +225,15 @@ resolveGitFiles git = \case
       "160000" -> pure Nothing
       "000000" -> pure Nothing -- deleted
       _ -> Logging.traceWarn ("Unexpected mode: " <> mode) $ pure Nothing
+
+  withXArgs args =
+    Process.setStdin (joinNULs args)
+      . Process.wrap [osp|xargs|] [[osp|-0|]]
+   where
+    joinNULs =
+      LazyText.encodeUtf8
+        . LazyText.intercalate "\NUL"
+        . map OsPath.toLazyText
 
 {----- Combinators -----}
 
