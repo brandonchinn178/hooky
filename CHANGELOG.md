@@ -1,3 +1,13 @@
+# v1.0.8
+
+* Output `--verbose` logs to stderr
+* Log all subprocess calls
+* Fix "Argument list too long" error in large repos
+* Fix `check_broken_symlinks` failing when a symlink points to a directory that only has nested files
+  * e.g. `foo-link -> foo/bar`, but only `foo/bar/a/b/c/baz.txt` exists
+* Show all successful `hooky lint` linters
+* Include hidden files/directories in `*` and `**` file globs
+
 # v1.0.7
 
 * Fix regression loading files with whitespace in name
