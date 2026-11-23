@@ -102,7 +102,7 @@ parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
     returnA -< RepoConfig{..}
   defaultsDecoder = proc () -> do
-    fileGlobs <- KDL.optional $ KDL.argsAt "files" -< ()
+    fileGlobs <- KDL.optional $ filesDecoder -< ()
     returnA -< (fileGlobs)
   getDefault def mFlags f = fromMaybe def $ mFlags >>= f
 
@@ -120,7 +120,7 @@ instance KDL.DecodeNode HookConfig where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     finalize <- KDL.children $ KDL.nodeWith "command" $ commandDecoder -< ()
-    fileGlobs <- KDL.children $ KDL.nodeWith "files" $ KDL.some KDL.arg -< ()
+    fileGlobs <- KDL.children $ filesDecoder -< ()
     returnA -< finalize name fileGlobs
    where
     commandDecoder = proc () -> do
@@ -238,7 +238,7 @@ instance KDL.DecodeNode LintRule where
   nodeDecoder = proc () -> do
     name <- KDL.arg -< ()
     rule <- ruleDecoder -< name
-    fileGlobs <- filesDecoder -< rule
+    fileGlobs <- filesDecoder' -< rule
     returnA -< LintRule{..}
    where
     ruleDecoder = proc name -> do
@@ -261,19 +261,23 @@ instance KDL.DecodeNode LintRule where
           KDL.fail -< "Unknown lint rule: " <> name
 
     -- TODO: This should be in sync with whether the rule is LintActionNoFile
-    filesDecoder = proc rule -> do
-      case rule of
-        LintRule_NoCommitToBranch{} -> do
+    supportsFiles = \case
+      LintRule_CheckBrokenSymlinks{}
+      LintRule_CheckCaseConflict{}
+      LintRule_CheckMergeConflict{}
+      LintRule_EndOfFileFixer{}
+      LintRule_TrailingWhitespace{} ->
+          True
+      LintRule_NoCommitToBranch{} ->
+        False
+    filesDecoder' = proc rule -> do
+      if supportsFiles rule
+        then KDL.option [] $ KDL.children $ filesDecoder -< ()
+        else do
           x <- KDL.optional $ KDL.children $ KDL.node @KDL.Node "files" -< ()
           case x of
             Just _ -> KDL.fail -< "'files' config is not supported for " <> rule.name
             Nothing -> returnA -< []
-        LintRule_CheckBrokenSymlinks{}
-        LintRule_CheckCaseConflict{}
-        LintRule_CheckMergeConflict{}
-        LintRule_EndOfFileFixer{}
-        LintRule_TrailingWhitespace{} ->
-            KDL.children $ KDL.argsAt "files" -< ()
 
 {----- PassFilesMode -----}
 
@@ -292,8 +296,16 @@ instance KDL.DecodeValue PassFilesMode where
     "none" -> pure PassFiles_None
     s -> KDL.failM $ "Invalid pass_files value: " <> s
 
-{----- Glob -----}
+{----- Files -----}
 
 instance KDL.DecodeValue Glob where
   validValueTypeAnns _ = ["glob"]
   valueDecoder = toGlob <$> KDL.string
+
+filesDecoder :: KDL.NodeListDecoder [Glob]
+filesDecoder =
+  KDL.nodeWith "files" $
+    KDL.oneOf
+      [ KDL.some KDL.arg
+      , KDL.children $ KDL.some $ KDL.argAt "-"
+      ]
