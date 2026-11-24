@@ -56,8 +56,7 @@ import System.File.OsPath qualified as OsPath
 import System.OsPath (OsPath, osp, (</>))
 
 data Config = Config
-  { repoConfigPath :: OsPath
-  , repo :: RepoConfig
+  { repo :: RepoConfig
   , global :: GlobalConfig
   , skippedHooks :: Set Text
   }

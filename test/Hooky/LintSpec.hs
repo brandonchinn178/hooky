@@ -34,7 +34,7 @@ import System.Directory (
   removeFile,
  )
 import System.FilePath ((</>))
-import System.OsPath (OsPath, osp)
+import System.OsPath (OsPath)
 import System.Timeout (timeout)
 import UnliftIO.Exception (SomeException)
 
@@ -404,8 +404,7 @@ gitFiles paths =
 defaultConfig :: LintRuleRule -> Config
 defaultConfig rule =
   Config
-    { repoConfigPath = [osp|.hooky.kdl|]
-    , repo =
+    { repo =
         RepoConfig
           { fileGlobs = []
           , hooks = []

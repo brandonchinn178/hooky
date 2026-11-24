@@ -1,6 +1,7 @@
 {-# LANGUAGE MultilineStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Hooky.E2ESpec (spec) where
 
@@ -9,7 +10,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Internal.Output (allOutputFormats, renderOutputFormat)
-import Hooky.TestUtils.Git (TestGitClient, withGitRepo)
+import Hooky.TestUtils.Git (TestGitClient (..), withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
 import Skeletest.Predicate qualified as P
@@ -21,8 +22,9 @@ import System.Directory (
   renameFile,
  )
 import System.Exit (ExitCode (..))
-import System.FilePath ((</>))
+import System.FilePath qualified as FilePath
 import System.IO qualified as IO
+import System.OsPath (osp, (</>))
 import System.Process qualified as Process
 import System.Timeout (timeout)
 
@@ -46,6 +48,20 @@ spec = do
       code1 `shouldBe` ExitSuccess
       stderr1 `shouldSatisfy` P.hasInfix "1 hook passed"
       stderr1 `shouldNotSatisfy` P.hasInfix "[warn]"
+
+    it "uses the hooky config in the worktree" . withGitRepo $ \git -> do
+      writeFile ".hooky.kdl" ""
+      runHooky ["install"] `shouldSatisfy` P.returns (P.eq ExitSuccess)
+      git.exec ["add", "."] *> git.exec ["commit", "-m", "initial"]
+
+      git.exec ["worktree", "add", "./worktree"]
+      let git2 = TestGitClient{repo = git.repo </> [osp|worktree|]}
+      writeFile "./worktree/.hooky.kdl" hookyConfigEofFixer
+      writeFile "./worktree/bad.txt" "bad"
+      git2.exec ["add", "."]
+      (code, _, stderr) <- git2.run ["commit", "-m", "commit"]
+      code `shouldBe` ExitFailure 1
+      stderr `shouldSatisfy` P.hasInfix "1 hook failed"
 
   describe "hooky run" $ do
     it "defaults to --stash --staged" $ do
@@ -307,7 +323,7 @@ spec = do
           createDirectory dir
           forM_ [1 .. 100 :: Int] $ \y -> do
             let file = Text.unpack $ Text.replicate 100 "b" <> Text.show y
-            writeFile (dir </> file) ""
+            writeFile (dir FilePath.</> file) ""
         git.exec ["add", "."]
         git.exec ["commit", "-m", "test", "-q"]
 
