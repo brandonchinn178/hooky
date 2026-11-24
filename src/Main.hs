@@ -82,15 +82,23 @@ import System.IO qualified as IO
 import System.OsPath (OsPath, addExtension, osp, (</>))
 import UnliftIO.Exception (Exception (..), SomeException (..), handleJust)
 
-{----- CLI Options -----}
+{----- CLI -----}
+
+data CLI = CLI
+  { run :: CLIEnv -> IO ()
+  , options :: CLIOptions
+  }
 
 data CLIOptions = CLIOptions
-  { run :: CLICommandAction
-  , configFile :: Maybe OsPath
+  { configFile :: Maybe OsPath
   , verbose :: Bool
   }
 
-type CLICommandAction = GitClient -> Config -> IO ()
+data CLIEnv = CLIEnv
+  { options :: CLIOptions
+  , git :: GitClient
+  , config :: Config
+  }
 
 data CLICommandDef
   = forall cmd.
@@ -103,10 +111,10 @@ data CLICommandDef
 
 class IsCLICommand cmd where
   cliCommandParse :: Opt.Parser cmd
-  cliCommandRun :: Proxy cmd -> cmd -> CLICommandAction
+  cliCommandRun :: Proxy cmd -> cmd -> CLIEnv -> IO ()
 
-loadCLIOptions :: IO CLIOptions
-loadCLIOptions =
+loadCLI :: IO CLI
+loadCLI =
   Opt.customExecParser prefs $
     Opt.info (parseOptions <**> Opt.helper <**> version) . mconcat $
       [ Opt.fullDesc
@@ -136,7 +144,7 @@ loadCLIOptions =
         , Opt.short 'v'
         , Opt.help "Increase logging verbosity"
         ]
-    pure CLIOptions{..}
+    pure CLI{run, options = CLIOptions{..}}
 
   parseInternalCommand =
     Opt.subparser . (Opt.internal <>) . mconcat . map mkCommand $
@@ -162,21 +170,21 @@ main = handleErrors $ do
   IO.hSetEncoding IO.stdout IO.utf8
   IO.hSetEncoding IO.stderr IO.utf8
 
-  cli <- loadCLIOptions
+  cli <- loadCLI
   Logging.initialize $
-    if cli.verbose
+    if cli.options.verbose
       then Logging.LogLevel_Debug
       else Logging.LogLevel_Warn
 
   git <- initGitClient
 
   repoConfigPath <-
-    case cli.configFile of
+    case cli.options.configFile of
       Nothing -> pure $ git.repo </> [osp|.hooky.kdl|]
       Just fp -> makeAbsolute fp
   config <- loadConfig repoConfigPath
 
-  cli.run git config
+  cli.run CLIEnv{options = cli.options, git, config}
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
@@ -217,11 +225,11 @@ instance IsCLICommand Cmd_Install where
         , Opt.help "Whether to install the absolute path to hooky"
         ]
     pure Cmd_Install{..}
-  cliCommandRun _ cmd git config = do
-    hookFile <- git.getPath [osp|hooks/pre-commit|]
+  cliCommandRun _ cmd env = do
+    hookFile <- env.git.getPath [osp|hooks/pre-commit|]
     backupOldHookFile hookFile
 
-    let useAbsolute = config.global.useAbsolute || cmd.useAbsolute
+    let useAbsolute = env.config.global.useAbsolute || cmd.useAbsolute
     hookyExe <-
       if useAbsolute
         then Text.pack <$> getExecutablePath
@@ -287,13 +295,13 @@ instance IsCLICommand Cmd_RunGit where
     mode <- parseRunModeCLI
     format <- parseFormatCLI
     pure Cmd_RunGit{..}
-  cliCommandRun _ cmd git config = do
-    runHooks git config $
+  cliCommandRun _ cmd env = do
+    runHooks env.git env.config $
       RunOptions
-        { mode = fromMaybe config.global.mode cmd.mode
+        { mode = fromMaybe env.config.global.mode cmd.mode
         , hooksToRun = Nothing
         , fileTarget = GitFile.FilesStaged
-        , format = fromMaybe config.global.format cmd.format
+        , format = fromMaybe env.config.global.format cmd.format
         , stash = True
         }
 
@@ -362,13 +370,13 @@ instance IsCLICommand Cmd_Run where
               Just ft -> (ft, stashFlag)
        in Cmd_Run{mode = Mode_Check, ..}
 
-  cliCommandRun _ cmd git config = do
-    runHooks git config $
+  cliCommandRun _ cmd env = do
+    runHooks env.git env.config $
       RunOptions
         { mode = cmd.mode
         , hooksToRun = cmd.hooksToRun
         , fileTarget = cmd.fileTarget
-        , format = fromMaybe config.global.format cmd.format
+        , format = fromMaybe env.config.global.format cmd.format
         , stash = cmd.stash
         }
 
@@ -415,10 +423,10 @@ instance IsCLICommand Cmd_Lint where
         ]
     pure Cmd_Lint{..}
 
-  cliCommandRun _ cmd git config = do
-    files <- resolveGitFiles git cmd.fileTarget
+  cliCommandRun _ cmd env = do
+    files <- resolveGitFiles env.git cmd.fileTarget
     report <-
-      runLintRules git config $
+      runLintRules env.git env.config $
         LintOptions
           { autofix = cmd.autofix
           , files
