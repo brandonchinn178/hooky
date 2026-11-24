@@ -45,6 +45,9 @@ Download the appropriate binary from the [GitHub releases page](https://github.c
     * `--absolute`: By default, the hook looks for any `hooky` executable on PATH; this option will instead save the absolute path to this `hooky` executable
     * Configure defaults with the [Global configuration](#global-configuration)
 
+* `hooky uninstall`
+    * Unregisters `hooky` from git hooks.
+
 * `hooky run [FILES ...] [-k HOOK]`
     * Manually runs the given hooks in `check` mode
     * Files may be specified as `@foo.txt`, where `foo.txt` contains one file per line.
