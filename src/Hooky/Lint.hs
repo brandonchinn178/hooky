@@ -80,10 +80,12 @@ runLintRules git config options = do
           ]
   evaluateDeep $ LintReport report
 
+type RuleName = Text
+
 runNonFileLintRules ::
   GitClient ->
   [(LintRule, LintAction)] ->
-  IO [(Text, LintResult)]
+  IO [(RuleName, LintResult)]
 runNonFileLintRules git allLinters =
   forM linters $ \(rule, run) -> do
     Logging.debug $ "Running linter: " <> rule.name
@@ -95,7 +97,7 @@ runNonFileLintRules git allLinters =
 runAllFilesLintRules ::
   GitClient ->
   [(LintRule, LintAction)] ->
-  IO (Map (Maybe OsPath) (NonEmpty (Text, LintResult)))
+  IO (Map (Maybe OsPath) (NonEmpty (RuleName, LintResult)))
 runAllFilesLintRules git allLinters = do
   files <- resolveGitFiles git GitFile.FilesAll
   fmap (Map.unionsWith (<>)) . forM linters $ \(rule, run) -> do
@@ -118,7 +120,7 @@ runPerFileLintRules ::
   LintOptions ->
   [(LintRule, LintAction)] ->
   OsPath ->
-  IO (Maybe OsPath, [(Text, LintResult)])
+  IO (Maybe OsPath, [(RuleName, LintResult)])
 runPerFileLintRules git options allLinters file =
   -- Skip reading file if there are no per-file linters to run
   (if null linters then pure Nothing else readFileMaybe file) >>= \case
@@ -177,7 +179,7 @@ newtype LintReport = LintReport
   { unwrap ::
       Map
         (Maybe OsPath)
-        (NonEmpty (Text, LintResult))
+        (NonEmpty (RuleName, LintResult))
   }
   deriving (NFData)
 
@@ -212,7 +214,7 @@ renderLintReport report = Text.intercalate "\n\n" $ failureMsgs ++ successMsgs
       then []
       else [Text.intercalate "\n" $ "Hooks passed:" : map ("- " <>) successfulHooks]
 
-getSuccessfulHooks :: LintReport -> [Text]
+getSuccessfulHooks :: LintReport -> [RuleName]
 getSuccessfulHooks report =
   -- Map (Maybe OsPath) [(Text, LintResult)]
   --   => [(Text, LintResult)]
@@ -229,10 +231,13 @@ getSuccessfulHooks report =
 
 data LintAction
   = LintActionNoFile (GitClient -> IO LintResult)
-  | LintActionAllFiles (GitClient -> Map OsPath GitFile -> IO [(OsPath, Text)])
-  | LintActionPerFile (GitClient -> OsPath -> Text -> IO (LintResult, Text))
+  | LintActionAllFiles (GitClient -> Map OsPath GitFile -> IO [(OsPath, FailureMessage)])
+  | LintActionPerFile (GitClient -> OsPath -> FileContent -> IO (LintResult, FileContent))
 
-data LintResult = LintSuccess | LintFixed | LintFailed Text
+type FailureMessage = Text
+type FileContent = Text
+
+data LintResult = LintSuccess | LintFixed | LintFailed FailureMessage
   deriving (Show, Eq)
 
 instance NFData LintResult where
@@ -284,7 +289,7 @@ lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
           [] -> LintSuccess
           (lineNum, conflictPat) : _ ->
             LintFailed $
-              "Merge conflict string found at line " <> (Text.pack . show) lineNum <> ": " <> (Text.pack . show) conflictPat
+              "Merge conflict string found at line " <> Text.show lineNum <> ": " <> Text.show conflictPat
   pure (result, contents)
  where
   getMergeConflict line lineNum

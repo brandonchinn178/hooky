@@ -26,8 +26,8 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
 import Data.Text.Lazy (LazyText)
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.IO qualified as TextL
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.IO qualified as LazyText
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Time qualified as Time
 import GHC.Records (HasField (..))
@@ -191,7 +191,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
           case mode of
             Mode_Check
             Mode_Fix -> do
-                Messages.log . TextL.unlines $
+                Messages.log . LazyText.unlines $
                   [ "Stashed changes conflicted with hook modifications."
                   , "Run `hooky fix` manually and `git add` the desired changes."
                   , "Rolling back changes for now..."
@@ -200,7 +200,7 @@ withStash git mode = bracket' saveUntracked restoreUntracked . bracket' save res
                 runGitApply
                 pure () -- no need to explicitly fail, since hooks should have failed
             Mode_FixAdd -> do
-              Messages.log . TextL.unlines $
+              Messages.log . LazyText.unlines $
                 [ "Stashed changes conflicted with fixed changes."
                 , "Fix conflicts after git finishes the commit."
                 ]
@@ -217,7 +217,7 @@ runHookCmds config checkDiffs format maxHooks = displayConsoleRegions . pooledMa
         withAsync (renderHookHeaderAnimated headerRegion hook.name) $ \_ -> do
           hookOutput <- initHookOutput config.global.maxOutputLines $ \buf ->
             setConsoleRegion outputRegion $ renderHookInProgressBody buf
-          hookOutput.log $ "Running: " <> (TextL.fromStrict . renderShell . NonEmpty.toList) hook.args
+          hookOutput.log $ "Running: " <> (LazyText.fromStrict . renderShell . NonEmpty.toList) hook.args
           (result, duration) <- withDuration $ runHook checkDiffs hookOutput hook
           when (shouldShowResult format result) $ do
             hookStdout <- hookOutput.getLines
@@ -229,7 +229,7 @@ runHookCmds config checkDiffs format maxHooks = displayConsoleRegions . pooledMa
     start <- getCurrentTime
     a <- action
     end <- getCurrentTime
-    pure (a, TextL.pack . show $ end `diffUTCTime` start)
+    pure (a, LazyText.show $ end `diffUTCTime` start)
 
 renderHookHeaderAnimated :: ConsoleRegion -> Text -> IO ()
 renderHookHeaderAnimated region name = go 0
@@ -331,8 +331,8 @@ printSummary results
   render status label = do
     let count = length $ filter ((== status) . snd) results
     when (count > 0) $ do
-      TextL.putStrLn . TextL.unwords $
-        [ TextL.pack $ show count
+      LazyText.putStrLn . LazyText.unwords $
+        [ LazyText.show count
         , if count == 1 then "hook" else "hooks"
         , label
         ]
@@ -374,8 +374,8 @@ initHookOutput maxOutputLines renderBuf = do
         renderBuf progressLines
   pure
     HookOutput
-      { onLine = onLine . TextL.fromStrict
-      , log = mapM_ (onLine . Term.yellow) . TextL.lines . Messages.render
+      { onLine = onLine . LazyText.fromStrict
+      , log = mapM_ (onLine . Term.yellow) . LazyText.lines . Messages.render
       , getLines = reverse . fst <$> readIORef outputRef
       }
 
@@ -392,7 +392,7 @@ initDiffChecker git mode = \hookOutput action -> do
     _ | before == after -> do
       pure result
     Mode_Check -> do
-      hookOutput.log . TextL.unlines $
+      hookOutput.log . LazyText.unlines $
         [ "Files were unexpectedly modified."
         , "Running hooks with --mode=check should NOT modify files, since hooks are run in"
         , "parallel. Fix the commands in the hooky config to only modify files with"

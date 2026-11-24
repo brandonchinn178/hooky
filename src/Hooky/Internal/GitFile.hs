@@ -139,7 +139,7 @@ resolveGitFiles git = \case
             case parseOneLine s rest of
               Just (x, rest') -> parseStart (x : acc) rest'
               Nothing ->
-                Logging.traceWarn ("Unexpected line when fetching changed files: " <> (Text.pack . show) s) $
+                Logging.traceWarn ("Unexpected line when fetching changed files: " <> Text.show s) $
                   parseStart acc rest
         parseOneLine s rest = do
           [oldMode0, newMode, _oldHash, _newHash, status] <- pure $ Text.words s
@@ -178,7 +178,7 @@ resolveGitFiles git = \case
     -- ls-files --stage should output lines in the following format:
     -- <mode> <hash> <stage>TAB<path>
     let parseLine line = parseLineM line <|> Logging.traceWarn (warnMsg line) Nothing
-        warnMsg line = "Unexpected line when fetching tracked files: " <> (Text.pack . show) line
+        warnMsg line = "Unexpected line when fetching tracked files: " <> Text.show line
         parseLineM s0 = do
           (mode, s1) <- breakOn " " s0
           (_hash, s2) <- breakOn " " s1

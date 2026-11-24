@@ -22,8 +22,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as Text
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.IO qualified as TextL
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.IO qualified as LazyText
 import Data.Typeable (typeOf, typeRep)
 import Data.Version (showVersion)
 import Hooky.Config (
@@ -180,7 +180,7 @@ main = handleErrors $ do
 
 handleErrors :: IO a -> IO a
 handleErrors = handleJust shouldHandle $ \(SomeException e) -> do
-  TextL.hPutStrLn IO.stderr . Term.red $ (TextL.strip . TextL.pack . displayException) e
+  LazyText.hPutStrLn IO.stderr . Term.red $ (LazyText.strip . LazyText.pack . displayException) e
   exitFailure
  where
   shouldHandle (SomeException e) = do
@@ -249,7 +249,7 @@ instance IsCLICommand Cmd_Install where
       ]
     makeExecutable hookFile
 
-    TextL.putStrLn . Term.green $ "🚀 Hooky installed at: " <> OsPath.toLazyText hookFile
+    LazyText.putStrLn . Term.green $ "🚀 Hooky installed at: " <> OsPath.toLazyText hookFile
    where
     quote s = "'" <> s <> "'"
     makeExecutable fp = do
@@ -262,7 +262,7 @@ instance IsCLICommand Cmd_Install where
       when exists $ do
         let backup = addExtension fp [osp|bak|]
         renameFile fp backup
-        Messages.log . TextL.unlines $
+        Messages.log . LazyText.unlines $
           [ "Found previously installed pre-commit hooks."
           , "Backed up to: " <> OsPath.toLazyText backup
           ]

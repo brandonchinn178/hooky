@@ -24,8 +24,8 @@ module Hooky.Internal.Logging (
 import Control.Monad (when)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Text (Text)
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.IO qualified as TextL
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.IO qualified as LazyText
 import Hooky.Utils.Term qualified as Term
 import System.IO (stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -68,7 +68,7 @@ sendLog :: LogLevel -> Text -> IO ()
 sendLog level msg = do
   logger <- readIORef loggerRef
   when (level >= logger.level) $ do
-    TextL.hPutStrLn stderr . levelColor level . TextL.fromStrict $ showLevel level <> msg
+    LazyText.hPutStrLn stderr . levelColor level . LazyText.fromStrict $ showLevel level <> msg
  where
   showLevel = \case
     LogLevel_Debug -> "[debug] "
