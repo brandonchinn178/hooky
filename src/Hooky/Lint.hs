@@ -284,7 +284,7 @@ lint_CheckMergeConflict = LintActionPerFile $ \_ _ contents -> do
           [] -> LintSuccess
           (lineNum, conflictPat) : _ ->
             LintFailed $
-              "Merge conflict string found at line " <> (Text.pack . show) lineNum <> ": " <> (Text.pack . show) conflictPat
+              "Merge conflict string found at line " <> Text.show lineNum <> ": " <> Text.show conflictPat
   pure (result, contents)
  where
   getMergeConflict line lineNum

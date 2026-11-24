@@ -32,7 +32,7 @@ instance HasField "client" TestGitClient GitClient where
 
 instance HasField "run" TestGitClient ([String] -> IO (ExitCode, Text, Text)) where
   getField git args = do
-    log_ $ "run: " <> (Text.pack . show) args
+    log_ $ "run: " <> Text.show args
     (code, stdoutS, stderrS) <-
       flip Process.readCreateProcessWithExitCode "" $
         Process.proc "git" $

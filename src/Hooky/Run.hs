@@ -229,7 +229,7 @@ runHookCmds config checkDiffs format maxHooks = displayConsoleRegions . pooledMa
     start <- getCurrentTime
     a <- action
     end <- getCurrentTime
-    pure (a, TextL.pack . show $ end `diffUTCTime` start)
+    pure (a, TextL.show $ end `diffUTCTime` start)
 
 renderHookHeaderAnimated :: ConsoleRegion -> Text -> IO ()
 renderHookHeaderAnimated region name = go 0
@@ -332,7 +332,7 @@ printSummary results
     let count = length $ filter ((== status) . snd) results
     when (count > 0) $ do
       TextL.putStrLn . TextL.unwords $
-        [ TextL.pack $ show count
+        [ TextL.show count
         , if count == 1 then "hook" else "hooks"
         , label
         ]
