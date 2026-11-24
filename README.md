@@ -87,20 +87,19 @@ hook name_of_hook {
     * `file` - Put files into a file (one file per line) and pass the list as an argument as `@path/to/file.txt`
     * `none` - Don't pass files to the command at all
 * `files`: Globs of files that should trigger the hook
-    * `*` matches any character except `/`
-    * `**` matches zero or more directories
-      * e.g. `a/**/*.txt` matches `a/foo.txt` and `a/b/foo.txt` but not `b/foo.txt`
-    * Relative paths match anywhere in the repo
-      * e.g. `*.txt` matches `foo.txt` and `foo/bar.txt`
-      * In other words, `**/` is auto-prepended to the beginning
-    * Absolute paths match from the root of the repo
-      * e.g. `/*.txt` matches `foo.txt` but not `foo/bar.txt`
-    * A glob can be negated with a `!` at the beginning
-      * e.g. `!foo.txt` matches `bar.txt` but not `foo.txt` nor `a/foo.txt`
-      * e.g. `!/foo.txt` matches `bar.txt` and `a/foo.txt` but not `foo.txt`
+    * See [File globs](#file-globs) for supported syntax
+    * Globs may be specified as arguments or lists:
+        ```kdl
+        files *.hs *.txt
+
+        files {
+            - *.hs
+            - *.txt
+        }
+        ```
     * When multiple globs are specified, a file matches if:
-      * Any positive globs match, AND
-      * All negative globs don't match
+        * Any positive globs match, AND
+        * All negative globs don't match
 
 You may also specify defaults in the `defaults` section. Available options are documented below:
 
@@ -110,6 +109,24 @@ defaults {
     files *.py
 }
 ```
+
+### File globs
+
+File globs are represented as KDL strings supporting the following syntax:
+
+* `*` matches any character except `/`
+* `**` matches zero or more directories
+    * e.g. `a/**/*.txt` matches `a/foo.txt` and `a/b/foo.txt` but not `b/foo.txt`
+* Relative paths match anywhere in the repo
+    * e.g. `*.txt` matches `foo.txt` and `foo/bar.txt`
+    * In other words, `**/` is auto-prepended to the beginning
+* Absolute paths match from the root of the repo
+    * e.g. `/*.txt` matches `foo.txt` but not `foo/bar.txt`
+* A glob can be negated with a `!` at the beginning
+    * e.g. `!foo.txt` matches `bar.txt` but not `foo.txt` nor `a/foo.txt`
+    * e.g. `!/foo.txt` matches `bar.txt` and `a/foo.txt` but not `foo.txt`
+
+Per normal KDL string syntax, it may be left unquoted if there are no special characters. Specifically, it can be unquoted for a simple `*.txt` glob, but any globs with `/` require quotes.
 
 ### Built-in hooks
 
