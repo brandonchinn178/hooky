@@ -235,7 +235,6 @@ instance IsCLICommand Cmd_Install where
         then Text.pack <$> getExecutablePath
         else pure "hooky"
 
-    let configPath = OsPath.toText config.repoConfigPath
     OsPath.writeFile' hookFile . Text.encodeUtf8 . Text.unlines $
       [ "hooky_exe=" <> quote hookyExe
       , "if ! command -v \"$hooky_exe\" 2>&1 >/dev/null; then"
@@ -246,7 +245,9 @@ instance IsCLICommand Cmd_Install where
       , "fi"
       , Text.unwords . concat $
           [ ["exec \"$hooky_exe\" __git"]
-          , ["--config", quote configPath]
+          , case env.options.configFile of
+              Just configPath -> ["--config", quote $ OsPath.toText configPath]
+              Nothing -> []
           , case cmd.mode of
               Just mode -> ["--mode", quote $ renderRunMode mode]
               Nothing -> []
