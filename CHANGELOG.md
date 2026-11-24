@@ -1,3 +1,14 @@
+# v1.0.9
+
+* Support specifying files as a list:
+
+    ```kdl
+    files {
+        - *.hs
+        - *.txt
+    }
+    ```
+
 # v1.0.8
 
 * Output `--verbose` logs to stderr
