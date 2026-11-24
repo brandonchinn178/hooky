@@ -13,7 +13,7 @@ module Hooky.Utils.Term (
 ) where
 
 import Data.Text.Lazy (LazyText)
-import Data.Text.Lazy qualified as TextL
+import Data.Text.Lazy qualified as LazyText
 import System.Console.ANSI (
   ColorIntensity (..),
   ConsoleIntensity (..),
@@ -29,10 +29,10 @@ type TextWrapper = LazyText -> LazyText
 
 wrapSGR :: [SGR] -> TextWrapper
 wrapSGR codes s =
-  TextL.concat
-    [ TextL.pack $ setSGRCode codes
+  LazyText.concat
+    [ LazyText.pack $ setSGRCode codes
     , s
-    , TextL.pack $ setSGRCode [Reset]
+    , LazyText.pack $ setSGRCode [Reset]
     ]
 
 bold :: TextWrapper

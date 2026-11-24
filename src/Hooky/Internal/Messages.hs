@@ -7,20 +7,20 @@ module Hooky.Internal.Messages (
 ) where
 
 import Data.Text.Lazy (LazyText)
-import Data.Text.Lazy qualified as TextL
-import Data.Text.Lazy.IO qualified as TextL
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.IO qualified as LazyText
 import Hooky.Utils.Term qualified as Term
 import Prelude hiding (log)
 
 render :: LazyText -> LazyText
-render = TextL.intercalate "\n" . onHead ("═══▶ " <>) . TextL.splitOn "\n"
+render = LazyText.intercalate "\n" . onHead ("═══▶ " <>) . LazyText.splitOn "\n"
  where
   onHead f = \case
     [] -> []
     x : xs -> f x : xs
 
 log :: LazyText -> IO ()
-log = TextL.putStrLn . Term.yellow . render
+log = LazyText.putStrLn . Term.yellow . render
 
 info :: LazyText -> IO ()
-info = TextL.putStrLn . Term.lightBlue . render
+info = LazyText.putStrLn . Term.lightBlue . render
