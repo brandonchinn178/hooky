@@ -32,7 +32,7 @@ Download the appropriate binary from the [GitHub releases page](https://github.c
 
 ## Usage
 
-* `hooky install [--mode MODE] [--format FORMAT]`
+* `hooky install [--mode MODE] [--format FORMAT] [--absolute]`
     * Registers `hooky` with git hooks.
     * `--mode` determines what to do when hooks modify files:
         * `check` (default) - Run the commands in `check` mode, which shouldn't modify files
@@ -42,6 +42,7 @@ Download the appropriate binary from the [GitHub releases page](https://github.c
         * `minimal` (default) - Only show full stdout of failed hooks.
         * `full` - Show passed/skipped hooks, without their stdout. Include durations for all hooks.
         * `verbose` - Show full stdout + duration of all hooks.
+    * `--absolute`: By default, the hook looks for any `hooky` executable on PATH; this option will instead save the absolute path to this `hooky` executable
     * Configure defaults with the [Global configuration](#global-configuration)
 
 * `hooky run [FILES ...] [-k HOOK]`
@@ -181,11 +182,18 @@ Available configuration and their defaults is documented below:
 
 ```kdl
 flags {
-    // The default --mode to use when committing, if not overridden in `hooky install`
+    // The default --mode to use when committing, if not overridden in
+    // `hooky install`
     --mode check
 
-    // The default --format to use when committing, if not overridden in `hooky install`
+    // The default --format to use when committing, if not overridden in
+    // `hooky install`
     --format minimal
+
+    // When set, save the absolute path to hooky in the git pre-commit hook in
+    // `hooky install`; otherwise, the git pre-commit hook will look for any
+    // `hooky` executable on PATH.
+    --absolute
 }
 
 // The maximum number of output lines to show while a hook is running
