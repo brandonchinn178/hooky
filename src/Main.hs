@@ -35,7 +35,7 @@ import Hooky.Config (
   parseRunMode,
   renderRunMode,
  )
-import Hooky.Error (abortImpure)
+import Hooky.Error (abort, abortImpure)
 import Hooky.Internal.GitFile (
   GitFileTarget,
   GitFileTargetArg,
@@ -71,6 +71,7 @@ import System.Directory.OsPath (
   doesFileExist,
   getPermissions,
   makeAbsolute,
+  removeFile,
   renameFile,
   setPermissions,
  )
@@ -153,6 +154,7 @@ loadCLI =
   parseCommand =
     Opt.hsubparser . mconcat . map mkCommand $
       [ cmdInstall
+      , cmdUninstall
       , cmdRun
       , cmdFix
       , cmdLint
@@ -275,6 +277,30 @@ instance IsCLICommand Cmd_Install where
           [ "Found previously installed pre-commit hooks."
           , "Backed up to: " <> OsPath.toLazyText backup
           ]
+
+{----- hooky uninstall -----}
+
+cmdUninstall :: CLICommandDef
+cmdUninstall =
+  CLICommandDef
+    { name = "uninstall"
+    , description = "Uninstall hooky as the git pre-commit hook"
+    , cmdType = Proxy @Cmd_Uninstall
+    }
+
+data Cmd_Uninstall = Cmd_Uninstall
+
+instance IsCLICommand Cmd_Uninstall where
+  cliCommandParse = pure Cmd_Uninstall
+  cliCommandRun _ _ env = do
+    hookFile <- env.git.getPath [osp|hooks/pre-commit|]
+
+    exists <- doesFileExist hookFile
+    unless exists $ do
+      abort "Hooky was not installed"
+
+    removeFile hookFile
+    LazyText.putStrLn $ Term.green "🧹 Hooky uninstalled"
 
 {----- hooky __git -----}
 
