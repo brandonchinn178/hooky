@@ -169,7 +169,7 @@ All rules have the following configuration:
 
 Available rules and rule-specific configuration:
 
-* `check_broken_symlinks` - Check if any symlinks which do not point to anything
+* `check_broken_symlinks` - Check if there are any symlinks which do not point to anything
 * `check_case_conflict` - Check if any files differ only by case, which would cause issues on case-insensitive filesystems like macOS
 * `check_merge_conflict` - Check if any files contain merge conflict strings
 * `end_of_file_fixer` - Ensure files end with exactly one newline
