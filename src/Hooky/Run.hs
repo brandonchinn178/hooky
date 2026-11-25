@@ -51,6 +51,7 @@ import Hooky.Internal.Output (
   renderHookReport,
  )
 import Hooky.Internal.Temp (hookyTmpDir)
+import Hooky.Utils.CSI qualified as CSI
 import Hooky.Utils.Git (GitClient)
 import Hooky.Utils.Glob (matchesGlobs)
 import Hooky.Utils.OsPath qualified as OsPath
@@ -366,7 +367,8 @@ data HookOutput = HookOutput
 initHookOutput :: Int -> ([LazyText] -> IO ()) -> IO HookOutput
 initHookOutput maxOutputLines renderBuf = do
   outputRef <- newIORef ([], Seq.empty)
-  let onLine line = do
+  let onLine lineRaw = do
+        let line = CSI.stripWith CSI.keepColor lineRaw
         progressLines <-
           atomicModifyIORef outputRef $ \(prev, buf) ->
             let buf' = (if Seq.length buf == maxOutputLines then Seq.drop 1 buf else buf) Seq.|> line

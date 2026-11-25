@@ -32,6 +32,7 @@ library
     Hooky.Internal.Messages
     Hooky.Internal.Output
     Hooky.Internal.Temp
+    Hooky.Utils.CSI
     Hooky.Utils.Git
     Hooky.Utils.Glob
     Hooky.Utils.OsPath

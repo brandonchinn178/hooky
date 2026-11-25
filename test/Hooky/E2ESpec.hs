@@ -10,6 +10,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import Hooky.Internal.Output (allOutputFormats, renderOutputFormat)
+import Hooky.Utils.CSI qualified as CSI
 import Hooky.TestUtils.Git (TestGitClient (..), withGitRepo)
 import Hooky.TestUtils.Hooky (HookyExe (..))
 import Skeletest
@@ -344,12 +345,7 @@ readHooky args = do
   let (stdout, stderr) = (Text.pack stdoutS, Text.pack stderrS)
   Text.hPutStrLn IO.stdout stdout
   Text.hPutStrLn IO.stderr stderr
-  pure (code, stripControlChars stdout, stripControlChars stderr)
- where
-  stripControlChars s =
-    case Text.breakOn "\x1b" s of
-      (_, "") -> s
-      (pre, post) -> pre <> stripControlChars (Text.drop 1 . Text.dropWhile (/= 'm') $ post)
+  pure (code, CSI.strip stdout, CSI.strip stderr)
 
 commitHookyEofFixer :: TestGitClient -> IO ()
 commitHookyEofFixer git = do
