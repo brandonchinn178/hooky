@@ -14,8 +14,7 @@ category: Tools
 build-type: Simple
 extra-source-files:
   README.md
-  test/Hooky/__snapshots__/E2ESpec.snap.md
-  test/Hooky/__snapshots__/LintSpec.snap.md
+  test/**/*.snap.md
 
 source-repository head
   type: git
@@ -45,6 +44,7 @@ library
     , bytestring
     , concurrent-output
     , containers
+    , data-default
     , deepseq
     , directory
     , file-io
@@ -94,13 +94,16 @@ test-suite hooky-tests
     Hooky.ConfigSpec
     Hooky.E2ESpec
     Hooky.LintSpec
+    Hooky.RunSpec
     Hooky.Utils.GlobSpec
     -- Test utilities
+    Hooky.TestUtils.Config
     Hooky.TestUtils.Git
     Hooky.TestUtils.Hooky
   build-depends:
       base
     , containers
+    , data-default
     , directory
     , filepath
     , hooky

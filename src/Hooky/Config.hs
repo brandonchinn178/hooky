@@ -35,6 +35,7 @@ module Hooky.Config (
 import Control.Arrow (returnA)
 import Control.Monad (unless)
 import Data.Bifunctor qualified as Bifunctor
+import Data.Default (Default (..))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
@@ -62,6 +63,14 @@ data Config = Config
   }
   deriving (Show, Eq)
 
+instance Default Config where
+  def =
+    Config
+      { repo = def
+      , global = def
+      , skippedHooks = def
+      }
+
 loadConfig :: OsPath -> IO Config
 loadConfig repoConfigPath = do
   global <- loadGlobalConfig
@@ -81,6 +90,14 @@ data RepoConfig = RepoConfig
   }
   deriving (Show, Eq)
 
+instance Default RepoConfig where
+  def =
+    RepoConfig
+      { fileGlobs = def
+      , hooks = def
+      , lintRules = def
+      }
+
 loadRepoConfig :: OsPath -> IO RepoConfig
 loadRepoConfig path = do
   configFileExists <- doesFileExist path
@@ -94,16 +111,17 @@ loadRepoConfig path = do
 parseRepoConfig :: Text -> Either Text RepoConfig
 parseRepoConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
+  defaults = def @RepoConfig
   decoder = KDL.document $ proc () -> do
     mDefaults <- KDL.optional . KDL.nodeWith "defaults" $ KDL.children defaultsDecoder -< ()
-    let fileGlobs = getDefault [] mDefaults $ \(x) -> x
+    let fileGlobs = getDefault defaults.fileGlobs mDefaults $ \(x) -> x
     hooks <- KDL.many $ KDL.node "hook" -< ()
     lintRules <- KDL.dashNodesAt "lint_rules" -< ()
     returnA -< RepoConfig{..}
   defaultsDecoder = proc () -> do
     fileGlobs <- KDL.optional $ filesDecoder -< ()
     returnA -< (fileGlobs)
-  getDefault def mFlags f = fromMaybe def $ mFlags >>= f
+  getDefault x mFlags f = fromMaybe x $ mFlags >>= f
 
 data HookConfig = HookConfig
   { name :: Text
@@ -140,6 +158,16 @@ data GlobalConfig = GlobalConfig
   }
   deriving (Show, Eq)
 
+instance Default GlobalConfig where
+  def =
+    GlobalConfig
+      { mode = Mode_Check
+      , format = Format_Minimal
+      , useAbsolute = False
+      , maxOutputLines = 5
+      , maxParallelHooks = 5
+      }
+
 loadGlobalConfig :: IO GlobalConfig
 loadGlobalConfig = do
   useGlobal <- not . maybe False (== "1") <$> lookupEnv "HOOKY_NO_GLOBAL"
@@ -156,20 +184,21 @@ loadGlobalConfig = do
 parseGlobalConfig :: Text -> Either Text GlobalConfig
 parseGlobalConfig = Bifunctor.first KDL.renderDecodeError . KDL.decodeWith decoder
  where
+  defaults = def @GlobalConfig
   decoder = KDL.document $ proc () -> do
     mFlags <- KDL.optional . KDL.nodeWith "flags" $ KDL.children flagsDecoder -< ()
-    let mode = getFlag Mode_Check mFlags $ \(x, _, _) -> x
-    let format = getFlag Format_Minimal mFlags $ \(_, x, _) -> x
-    let useAbsolute = getFlag False mFlags $ \(_, _, x) -> x
-    maxOutputLines <- KDL.option 5 $ KDL.argAt "max_output_lines" -< ()
-    maxParallelHooks <- KDL.option 5 $ KDL.argAt "max_parallel_hooks" -< ()
+    let mode = getFlag defaults.mode mFlags $ \(x, _, _) -> x
+    let format = getFlag defaults.format mFlags $ \(_, x, _) -> x
+    let useAbsolute = getFlag defaults.useAbsolute mFlags $ \(_, _, x) -> x
+    maxOutputLines <- KDL.option defaults.maxOutputLines $ KDL.argAt "max_output_lines" -< ()
+    maxParallelHooks <- KDL.option defaults.maxParallelHooks $ KDL.argAt "max_parallel_hooks" -< ()
     returnA -< GlobalConfig{..}
   flagsDecoder = proc () -> do
     mode <- KDL.optional $ KDL.argAt "--mode" -< ()
     format <- KDL.optional $ KDL.argAt "--format" -< ()
     useAbsolute <- KDL.optional . KDL.nodeWith "--absolute" $ pure True -< ()
     returnA -< (mode, format, useAbsolute)
-  getFlag def mFlags f = fromMaybe def $ mFlags >>= f
+  getFlag x mFlags f = fromMaybe x $ mFlags >>= f
 
 {----- RunMode -----}
 

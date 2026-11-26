@@ -3,16 +3,11 @@
 
 module Hooky.ConfigSpec (spec) where
 
-import Data.List.NonEmpty qualified as NonEmpty
-import Data.Text (Text)
-import Hooky.Config (
-  HookConfig (HookConfig),
-  PassFilesMode (..),
-  RepoConfig (RepoConfig),
-  parseRepoConfig,
- )
+import Data.Default (def)
+import Hooky.Config (parseRepoConfig)
 import Hooky.Config qualified as HookConfig (HookConfig (..))
 import Hooky.Config qualified as RepoConfig (RepoConfig (..))
+import Hooky.TestUtils.Config (toHookConfig)
 import Hooky.Utils.Glob (toGlob)
 import Skeletest
 import Skeletest.Predicate qualified as P
@@ -35,7 +30,7 @@ defaultsSpec = do
               }
               """
             expected =
-              emptyRepoConfig
+              def
                 { RepoConfig.fileGlobs = [toGlob "*.hs", toGlob "*.md"]
                 }
         parseRepoConfig input `shouldBe` Right expected
@@ -51,7 +46,7 @@ defaultsSpec = do
               }
               """
             expected =
-              emptyRepoConfig
+              def
                 { RepoConfig.fileGlobs = [toGlob "*.hs", toGlob "*.md"]
                 }
         parseRepoConfig input `shouldBe` Right expected
@@ -69,7 +64,7 @@ hookSpec = do
               }
               """
             expected =
-              emptyRepoConfig
+              def
                 { RepoConfig.hooks =
                     [ (toHookConfig "myHook" ["foo"])
                         { HookConfig.fileGlobs = [toGlob "*.hs", toGlob "*.md"]
@@ -90,7 +85,7 @@ hookSpec = do
               }
               """
             expected =
-              emptyRepoConfig
+              def
                 { RepoConfig.hooks =
                     [ (toHookConfig "myHook" ["foo"])
                         { HookConfig.fileGlobs = [toGlob "*.hs", toGlob "*.md"]
@@ -133,22 +128,3 @@ lintRulesSpec = do
     it "fails if 'files' specified" $ do
       parseRepoConfig ("lint_rules { - " <> rule <> " { files *.txt; }; }")
         `shouldSatisfy` P.left (P.hasInfix "'files' config is not supported for")
-
-emptyRepoConfig :: RepoConfig
-emptyRepoConfig =
-  RepoConfig
-    { fileGlobs = []
-    , hooks = []
-    , lintRules = []
-    }
-
-toHookConfig :: Text -> [Text] -> HookConfig
-toHookConfig name args =
-  HookConfig
-    { name
-    , cmdArgs = NonEmpty.fromList args
-    , checkArgs = []
-    , fixArgs = []
-    , passFiles = PassFiles_XArgs
-    , fileGlobs = []
-    }
