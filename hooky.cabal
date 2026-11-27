@@ -14,8 +14,8 @@ category: Tools
 build-type: Simple
 extra-source-files:
   README.md
-  test/Hooky/__snapshots__/E2ESpec.snap.md
-  test/Hooky/__snapshots__/LintSpec.snap.md
+  CHANGELOG.md
+  test/**/*.snap.md
 
 source-repository head
   type: git
@@ -63,6 +63,8 @@ library
 executable hooky
   main-is: src/Main.hs
   other-modules:
+    Paths_hooky
+  autogen-modules:
     Paths_hooky
   build-depends:
       base
