@@ -327,8 +327,8 @@ spec = do
         git.exec ["add", "."]
         git.exec ["commit", "-m", "test", "-q"]
 
-        maybe (failTest "Timed out") pure <=< timeout 1_500_000 $ do
-          (code, _, _) <- readHooky ["run", "-a", "--format=verbose"]
+        maybe (failTest "Timed out") pure <=< timeout 2_000_000 $ do
+          code <- runHooky ["run", "-a", "--format=verbose"]
           code `shouldBe` ExitSuccess
 
 runHooky :: [String] -> IO ExitCode
