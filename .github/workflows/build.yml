@@ -108,6 +108,10 @@ jobs:
       -
         uses: haskell-actions/setup@v2
       -
+        name: Fix README links for Hackage
+        run: |
+          sed -i 's|scripts/demo/demo.gif|https://raw.githubusercontent.com/brandonchinn178/hooky/v${{ inputs.version }}/scripts/demo/demo.gif|' README.md
+      -
         name: Create sdist bundle
         run: cabal sdist --output-directory=.
       -
