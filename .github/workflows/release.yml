@@ -42,9 +42,12 @@ jobs:
     needs:
       - cabal_file
       - build
+      - check_changelog
     runs-on: ubuntu-latest
+
     env:
       version: ${{ needs.cabal_file.outputs.version }}
+
     steps:
       -
         uses: actions/checkout@v6
@@ -55,11 +58,27 @@ jobs:
           pattern: hooky-binary-*
           merge-multiple: true
       -
+        uses: actions/download-artifact@v7
+        with:
+          name: hooky-sdist
+          path: ./.release/sdist/
+      -
+        id: hackage_token_secret
+        name: Load Hackage token secret name
+        run: |
+          USERNAME="$(echo "${GITHUB_ACTOR}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+          echo "name=HACKAGE_TOKEN_${USERNAME}" >> "${GITHUB_OUTPUT}"
+      -
         name: Generate release notes
         run:
           scripts/release_notes.py generate
             --release-version "${version}"
             | tee .release/release-notes.md
+      -
+        uses: haskell-actions/hackage-publish@v1
+        with:
+          hackageToken: ${{ secrets[steps.hackage_token_secret.outputs.name] }}
+          packagesPath: ./.release/sdist/
       -
         uses: softprops/action-gh-release@v2
         with:

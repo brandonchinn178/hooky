@@ -99,3 +99,19 @@ jobs:
         with:
           name: hooky-binary-${{ matrix.platform }}
           path: bin/hooky-*
+
+  build_sdist:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        uses: actions/checkout@v6
+      -
+        uses: haskell-actions/setup@v2
+      -
+        name: Create sdist bundle
+        run: cabal sdist --output-directory=.
+      -
+        uses: actions/upload-artifact@v6
+        with:
+          name: hooky-sdist
+          path: hooky-*.tar.gz
