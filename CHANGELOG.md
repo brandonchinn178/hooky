@@ -1,3 +1,9 @@
+# v1.0.10
+
+* Start publishing to Hackage
+* Add `hooky uninstall`
+* Fix installing hooky in worktrees
+
 # v1.0.9
 
 * Support specifying files as a list:
